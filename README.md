@@ -1,5 +1,5 @@
 # HomotopicAffineTransform
-Source code of JMIV Paper
+Source code of JMIV Paper: Homotopic Affine Transformations in the 2D Cartesian Grid
 
 ## Compilation
 
