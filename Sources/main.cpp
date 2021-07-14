@@ -11,28 +11,6 @@
 using namespace std;
 using namespace DGtal;
 
-std::vector<Z2i::Point>
-readImage(string filename) {
-  std::vector<Z2i::Point> vecPtsTmp;
-  typedef ImageSelector<Z2i::Domain, unsigned char >::Type Image;
-  Image image = PGMReader<Image>::importPGM( filename );
-  for ( Z2i::Domain::ConstIterator it = image.domain().begin(); it != image.domain().end(); ++it )
-  {
-    unsigned char val =  image (*it);
-    if(val==255)
-      vecPtsTmp.push_back(*it);
-  }
-  //Center the points
-  Z2i::RealPoint cr = getBaryCenter(vecPtsTmp);
-  Z2i::Point p, c(round(cr[0]),round(cr[1]));
-  std::vector<Z2i::Point> vecPts;
-  for(auto it=vecPtsTmp.begin(); it!=vecPtsTmp.end(); it++) {
-    p = (*it) - c;
-    vecPts.push_back(p);
-  }
-  return vecPts;
-}
-
 //Compute the set faces of CH1 belong (true) to CH2
 std::vector<bool>
 getBelongFace(const Complex& cH1, const Complex& cH2) {
@@ -56,17 +34,6 @@ getBorderFace(const Complex& cH) {
 
 std::vector<std::vector<int> > getNeigbourFace(const Complex& cH) {
   std::vector<std::vector<int> > vN = cH.getAllNeighbourFace();
-  /*
-  Board2D aBoard;
-  cH.drawGrid(aBoard);
-  cH.drawComplex(aBoard, Color::Gray);
-  int id = 10;
-  for(size_t it=0; it<vN.at(id).size(); it++)
-    drawFace(cH.getFaceVertices(vN.at(id).at(it)), aBoard, 0.9, DGtal::Color::Green);
-  drawFace(cH.getFaceVertices(id), aBoard, 0.9, DGtal::Color::Red);
-  aBoard.saveSVG("../Illustration/testNeighbour.svg");
-  aBoard.clear();
-  */
   return vN;
 }
 
@@ -75,7 +42,7 @@ std::vector<bool> getNeigbourFace(const Complex& gH, const std::vector<bool>& bo
   std::vector<std::vector<int> > vecNext;
   std::vector<std::vector<int> > vecNint;
   for(size_t it=0; it<bordercH.size(); it++) {
-    if(bordercH.at(it)) { //if interieur border
+    if(bordercH.at(it)) { //if interieur border
       std::vector<int> vN = gH.getNeighbourFace(it);
       std::vector<int> vNExt;
       std::vector<int> vNInt;
@@ -94,38 +61,8 @@ std::vector<bool> getNeigbourFace(const Complex& gH, const std::vector<bool>& bo
   //get all int / ext border faces
   for(size_t it=0; it<vecNext.size(); it++)
     for(size_t it_bis=0; it_bis<vecNext.at(it).size(); it_bis++) {
-      //if(!containElement(vecBorder, vecNext.at(it).at(it_bis)))
-      //  vecBorder.push_back(vecNext.at(it).at(it_bis));
       vecBorder.at(vecNext.at(it).at(it_bis)) = true;
     }
-  /*
-  Board2D aBoard;
-  gH.drawGrid(aBoard);
-  for(size_t it=0; it<iscH.size(); it++) //dessin CH
-    if(iscH.at(it))
-      drawFace(gH.getFaceVertices(it), aBoard, 0.9, DGtal::Color::Green);
-  for(size_t it=0; it<vecNext.size(); it++) {
-    //Draw exterieur
-    for(size_t it_bis=0; it_bis<vecNext.at(it).size(); it_bis++)
-      drawFace(gH.getFaceVertices(vecNext.at(it).at(it_bis)), aBoard, 0.9, DGtal::Color::Red);
-    //Draw interieur
-    for(size_t it_bis=0; it_bis<vecNint.at(it).size(); it_bis++)
-      drawFace(gH.getFaceVertices(vecNint.at(it).at(it_bis)), aBoard, 0.9, DGtal::Color::Blue);
-  }
-  aBoard.saveSVG("../Illustration/testBorderExt.svg");
-  aBoard.clear();
-  
-  gH.drawGrid(aBoard);
-  for(size_t it=0; it<iscH.size(); it++) //dessin CH
-    if(iscH.at(it))
-      drawFace(gH.getFaceVertices(it), aBoard, 0.9, DGtal::Color::Green);
-  for(size_t it=0; it<vecBorder.size(); it++) { //Draw border
-    if(vecBorder.at(it))
-      drawFace(gH.getFaceVertices(it), aBoard, 0.9, DGtal::Color::Red);
-  }
-  aBoard.saveSVG("../Illustration/testBorder.svg");
-  aBoard.clear();
-  */
   return vecBorder;
 }
 
@@ -272,27 +209,7 @@ setFaceState(const Complex& cH, const Complex& gridH) {
     }
     assert(belong==true);
   }
-  /*
-  std::vector<bool> isBelong(gridH.face.size(),false);
-  bool belong = false;
-  //std::vector<RationalPoint> f;
-  RationalPoint c;
-  for(size_t it=0; it<gridH.face.size(); it++) {
-    belong = false;
-    //f = gridH.getFaceVertices(it);
-    c = gridH.getFaceCenter(it);
-    for(size_t it_bis=0; it_bis<cH.face.size() && !belong; it_bis++) {
-      if(gridH.face.at(it).size() == cH.face.at(it_bis).size()) { //same size
-        //c = cH.getFaceCenter(it_bis);
-        if(isInsidePolygon(cH.getFaceVertices(it_bis), c))//(isInsidePolygon(f, c))
-          belong = true;
-      }
-    }
-    isBelong.at(it) = belong;
-  }
-  */
   return isBelong;
-  //return iota(gridH, cH);
 }
 
 //Compute tau fct indicating whether a face h2 of complex H is simple
@@ -403,7 +320,7 @@ Complex initizeGauss(const Complex &cH, const Complex &gH) {
 }
 
 std::vector<Z2i::Point>
-illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool saveFile = true) {
+testMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool saveFile = true) {
   std::vector<Z2i::Point> Y;
   std::pair<Z2i::Point,Z2i::Point> bb = getBoundingBox(X);
   string filename;
@@ -451,7 +368,7 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
   if(saveFile) {
     gridH.drawGrid(aBoard);
     gridH.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/gridH.svg");
+    aBoard.saveSVG("../Results/gridH.svg");
     aBoard.clear();
   }
   
@@ -460,7 +377,7 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
   if(saveFile) {
     cX.drawGrid(aBoard);
     cX.drawPixel(aBoard);
-    aBoard.saveSVG("../Illustration/objetX.svg");
+    aBoard.saveSVG("../Results/objetX.svg");
     aBoard.clear();
   }
   
@@ -475,7 +392,7 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
   if(saveFile) {
     complexF.drawGrid(aBoard);
     complexF.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/complexF.svg");
+    aBoard.saveSVG("../Results/complexF.svg");
     aBoard.clear();
   }
   
@@ -484,14 +401,14 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
   if(saveFile) {
     complexG.drawGrid(aBoard);
     complexG.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/complexG.svg");
+    aBoard.saveSVG("../Results/complexG.svg");
     aBoard.clear();
     
     complexF.drawComplex(aBoard, Color::Red);
     complexG.drawComplex(aBoard, Color::Blue);
     complexF.drawGrid(aBoard);
     complexG.drawGrid(aBoard);
-    aBoard.saveSVG("../Illustration/complexFG.svg");
+    aBoard.saveSVG("../Results/complexFG.svg");
     aBoard.clear();
   }
   
@@ -514,8 +431,8 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
   if(saveFile) {
     gridH.drawGrid(aBoard);
     complexH.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/complexH.svg");
-    aBoard.saveSVG("../Illustration/complexMajorityH.svg");
+    aBoard.saveSVG("../Results/complexH.svg");
+    aBoard.saveSVG("../Results/complexMajorityH.svg");
     aBoard.clear();
   }
   
@@ -537,7 +454,7 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
       else
         gridH.drawFace(aBoard, it, DGtal::Color::Red);
     }
-    aBoard.saveSVG("../Illustration/stageFaceMajority.svg");
+    aBoard.saveSVG("../Results/stageFaceMajority.svg");
     aBoard.clear();
   }
   
@@ -554,7 +471,7 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
       if(areaFace.at(it)>0) //face of Hinit
         gridH.drawFace(aBoard, it, DGtal::Color::Green);
     }
-    aBoard.saveSVG("../Illustration/areaFaceMajority.svg");
+    aBoard.saveSVG("../Results/areaFaceMajority.svg");
     aBoard.clear();
   }
   //Compute fill area f2 of Hinit (wrt Hgrid)
@@ -593,14 +510,14 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
       if(fillAreaFace.at(it)>0.5) //majority interieur
         gridH.drawFace(aBoard, it, DGtal::Color::Green);
       else {
-        if(fillAreaFace.at(it)<EPSILON || fabs(fillAreaFace.at(it)-1)<EPSILON) //pure pixels
+        if(fillAreaFace.at(it)<EPSILON || fabs(fillAreaFace.at(it)-1)<EPSILON) //pure pixels
           gridH.drawFace(aBoard, it, DGtal::Color::Red);
         else //majority exterieur
             gridH.drawFace(aBoard, it, DGtal::Color::Blue);
       }
     }
     Hinit.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/fillAreaFaceMajority.svg");
+    aBoard.saveSVG("../Results/fillAreaFaceMajority.svg");
     aBoard.clear();
   }
   
@@ -620,7 +537,7 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
         tgridF.drawFace(aBoard, it, DGtal::Color::Red);
     }
     Hinit.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/sigmaMajority.svg");
+    aBoard.saveSVG("../Results/sigmaMajority.svg");
     aBoard.clear();
   }
   
@@ -647,7 +564,7 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
       }
     }
     complexH.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/zetaMajority.svg");
+    aBoard.saveSVG("../Results/zetaMajority.svg");
     aBoard.clear();
   }
   
@@ -663,7 +580,7 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
       else
         gridH.drawFace(aBoard, it, DGtal::Color::Red);
     }
-    aBoard.saveSVG("../Illustration/iotaMajority.svg");
+    aBoard.saveSVG("../Results/iotaMajority.svg");
     aBoard.clear();
   }
   
@@ -694,7 +611,7 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
       }
     }
     //complexH.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/epsilonMajority.svg");
+    aBoard.saveSVG("../Results/epsilonMajority.svg");
     aBoard.clear();
   }
   
@@ -710,7 +627,7 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
         gridH.drawFace(aBoard, it, DGtal::Color::Red);
     }
     complexH.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/tauMajority.svg");
+    aBoard.saveSVG("../Results/tauMajority.svg");
     aBoard.clear();
   }
   
@@ -726,7 +643,7 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
       else
         gridH.drawFace(aBoard, it, DGtal::Color::Green);
     }
-    aBoard.saveSVG("../Illustration/borderFaceMajority.svg");
+    aBoard.saveSVG("../Results/borderFaceMajority.svg");
     aBoard.clear();
   }
   //Update tau value of border faces
@@ -747,7 +664,7 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
         gridH.drawFace(aBoard, it, DGtal::Color::Red);
     }
     Hinit.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/tauMajority2.svg");
+    aBoard.saveSVG("../Results/tauMajority2.svg");
     aBoard.clear();
   }
   
@@ -757,21 +674,21 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
     gridH.drawGrid(aBoard);
     gridH.drawComplex(aBoard, DGtal::Color::Green);
     gridH.drawFace(aBoard, maxIndex, DGtal::Color::Red);
-    aBoard.saveSVG("../Illustration/maxEpsilonMajority.svg");
+    aBoard.saveSVG("../Results/maxEpsilonMajority.svg");
     aBoard.clear();
   }
   //Line 12-26: Loop
   int nbIter=0;
   double a, h2 = maxIndex, f2 = phi.at(h2);
   while(epsilonValue.at(h2)>=0) {
-    std::cout<<"nbIter="<<nbIter<<": h2="<<h2<<", f2="<<f2;
+    std::cout<<"Majority vote: nbIter="<<nbIter<<": h2="<<h2<<", f2="<<f2;
     //Line 13
     Complex Hcurrent;
     //Hcurrent.initGridLines(gridH.vertical_lines, gridH.horizontal_lines);
     Hcurrent.initGridLines(tgridF.vertical_lines, tgridF.horizontal_lines);
     std::vector<int> inFace = Phi.at(f2);
     a = fillAreaFace.at(h2);
-    if(tauValue.at(h2)) {//if simple cell
+    if(tauValue.at(h2)) {//if simple cell
       //Line 14-15: Update iota of h2
       //std::cout<<"Before: iotaValue.at(h2)="<<iotaValue.at(h2)<<std::endl;
       iotaValue.at(h2) = !iotaValue.at(h2); //Inverse state face
@@ -789,7 +706,7 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
             gridH.drawFace(aBoard, it, DGtal::Color::Red);
         }
         Hcurrent.drawComplex(aBoard, Color::Gray);
-        filename = "../Illustration/HcurrentMajority_s" + std::to_string(nbIter) + ".svg";
+        filename = "../Results/HcurrentMajority_s" + std::to_string(nbIter) + ".svg";
         aBoard.saveSVG(filename.c_str());
         aBoard.clear();
       }
@@ -807,21 +724,6 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
       std::vector<bool> tauHcurrent = tau(gridH, Hcurrent);
       for(size_t it=0; it<gridH.face.size(); it++)
         tauValue.at(it) = tauHcurrent.at(it);
-      /*
-      if(saveFile) {
-        gridH.drawGrid(aBoard);
-        for(size_t it=0; it<gridH.face.size(); it++) {
-          if(tauValue.at(it))
-            gridH.drawFace(aBoard, it, DGtal::Color::Green);
-          else
-            gridH.drawFace(aBoard, it, DGtal::Color::Red);
-        }
-        complexH.drawComplex(aBoard, Color::Gray);
-        filename = "../Illustration/tau_s" + std::to_string(nbIter) + ".svg";
-        aBoard.saveSVG(filename.c_str());
-        aBoard.clear();
-      }
-      */
       //Line 19 ????
     }
     else { //Line 20-21
@@ -839,7 +741,7 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
             gridH.drawFace(aBoard, it, DGtal::Color::Red);
         }
         Hcurrent.drawComplex(aBoard, Color::Gray);
-        filename = "../Illustration/HcurrentGauss_s" + std::to_string(nbIter) + ".svg";
+        filename = "../Results/HcurrentGauss_s" + std::to_string(nbIter) + ".svg";
         aBoard.saveSVG(filename.c_str());
         aBoard.clear();
       }
@@ -874,7 +776,7 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
         }
       }
       Hcurrent.drawComplex(aBoard, Color::Gray);
-      filename = "../Illustration/epsilonMajority_s" + std::to_string(nbIter) + ".svg";
+      filename = "../Results/epsilonMajority_s" + std::to_string(nbIter) + ".svg";
       aBoard.saveSVG(filename.c_str());
       aBoard.clear();
     }
@@ -902,7 +804,7 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
           gridH.drawFace(aBoard, it, DGtal::Color::Red);
       }
       Hcurrent.drawComplex(aBoard, Color::Gray);
-      filename = "../Illustration/tauGauss_s" + std::to_string(nbIter) + ".svg";
+      filename = "../Results/tauGauss_s" + std::to_string(nbIter) + ".svg";
       aBoard.saveSVG(filename.c_str());
       aBoard.clear();
     }
@@ -927,7 +829,7 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
         gridH.drawFace(aBoard, it, DGtal::Color::Red);
     }
     Hopt.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/HoptMajority.svg");
+    aBoard.saveSVG("../Results/HoptMajority.svg");
     aBoard.clear();
   }
   //Retreive integer points
@@ -947,7 +849,7 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
     if(saveFile) {
       cY.drawGrid(aBoard);
       cY.drawPixel(aBoard);
-      aBoard.saveSVG("../Illustration/objetYMajority.svg");
+      aBoard.saveSVG("../Results/objetYMajority.svg");
       aBoard.clear();
     }
   }
@@ -955,7 +857,7 @@ illustrationMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, 
 }
 
 std::vector<Z2i::Point>
-illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool saveFile = true) {
+testGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool saveFile = true) {
   std::vector<Z2i::Point> Y;
   std::pair<Z2i::Point,Z2i::Point> bb = getBoundingBox(X);
   string filename;
@@ -1003,7 +905,7 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
   if(saveFile) {
     gridH.drawGrid(aBoard);
     gridH.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/gridH.svg");
+    aBoard.saveSVG("../Results/gridH.svg");
     aBoard.clear();
   }
   
@@ -1012,7 +914,7 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
   if(saveFile) {
     cX.drawGrid(aBoard);
     cX.drawPixel(aBoard);
-    aBoard.saveSVG("../Illustration/objetX.svg");
+    aBoard.saveSVG("../Results/objetX.svg");
     aBoard.clear();
   }
   
@@ -1027,7 +929,7 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
   if(saveFile) {
     complexF.drawGrid(aBoard);
     complexF.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/complexF.svg");
+    aBoard.saveSVG("../Results/complexF.svg");
     aBoard.clear();
   }
   
@@ -1036,14 +938,14 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
   if(saveFile) {
     complexG.drawGrid(aBoard);
     complexG.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/complexG.svg");
+    aBoard.saveSVG("../Results/complexG.svg");
     aBoard.clear();
     
     complexF.drawComplex(aBoard, Color::Red);
     complexG.drawComplex(aBoard, Color::Blue);
     complexF.drawGrid(aBoard);
     complexG.drawGrid(aBoard);
-    aBoard.saveSVG("../Illustration/complexFG.svg");
+    aBoard.saveSVG("../Results/complexFG.svg");
     aBoard.clear();
   }
   
@@ -1066,23 +968,16 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
   if(saveFile) {
     gridH.drawGrid(aBoard);
     complexH.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/complexH.svg");
+    aBoard.saveSVG("../Results/complexH.svg");
     aBoard.clear();
   }
-  
-  /*
-  getNeigbourFace(complexH);
-  std::vector<bool> borderH = getBorderFace(gridH, complexH);
-  std::vector<bool> stateH = setFaceState(complexH, gridH);
-  getNeigbourFace(gridH, borderH, stateH);
-  */
-  
+    
   Complex complexGauss = initizeGauss(complexH, gridH);
   if(saveFile) {
     gridH.drawGrid(aBoard);
     complexGauss.drawComplex(aBoard, Color::Gray);
     complexH.drawComplex(aBoard, Color::Red);
-    aBoard.saveSVG("../Illustration/complexGaussH.svg");
+    aBoard.saveSVG("../Results/complexGaussH.svg");
     aBoard.clear();
   }
   
@@ -1095,7 +990,6 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
       sum++;
   assert(sum==Hinit.face.size());
   assert(stateFaceHinit.size()==gridH.face.size());
-  //std::vector<bool> stateFaceHcurrent = stateFaceHinit;
   if(saveFile) {
     gridH.drawGrid(aBoard);
     for(size_t it=0; it<gridH.face.size(); it++) {
@@ -1104,7 +998,7 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
       else
         gridH.drawFace(aBoard, it, DGtal::Color::Red);
     }
-    aBoard.saveSVG("../Illustration/stateFaceInitGauss.svg");
+    aBoard.saveSVG("../Results/stateFaceInitGauss.svg");
     aBoard.clear();
   }
   
@@ -1124,7 +1018,7 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
       else
         gridH.drawFace(aBoard, it, DGtal::Color::Red);
     }
-    aBoard.saveSVG("../Illustration/stateFaceTargetGauss.svg");
+    aBoard.saveSVG("../Results/stateFaceTargetGauss.svg");
     aBoard.clear();
   }
   
@@ -1141,7 +1035,7 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
       if(areaFace.at(it)>0) //face of Hinit
         gridH.drawFace(aBoard, it, DGtal::Color::Green);
     }
-    aBoard.saveSVG("../Illustration/areaFaceGauss.svg");
+    aBoard.saveSVG("../Results/areaFaceGauss.svg");
     aBoard.clear();
   }
   //Compute fill area f2 of Hinit (wrt Hgrid)
@@ -1180,14 +1074,14 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
       if(fillAreaHinitFace.at(it)>0.5) //majority interieur
         gridH.drawFace(aBoard, it, DGtal::Color::Green);
       else {
-        if(fillAreaHinitFace.at(it)<EPSILON || fabs(fillAreaHinitFace.at(it)-1)<EPSILON) //pure pixels
+        if(fillAreaHinitFace.at(it)<EPSILON || fabs(fillAreaHinitFace.at(it)-1)<EPSILON) //pure pixels
           gridH.drawFace(aBoard, it, DGtal::Color::Red);
         else //majority exterieur
             gridH.drawFace(aBoard, it, DGtal::Color::Blue);
       }
     }
     Hinit.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/fillAreaFaceHinitGauss.svg");
+    aBoard.saveSVG("../Results/fillAreaFaceHinitGauss.svg");
     aBoard.clear();
   }
   
@@ -1217,14 +1111,14 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
       if(fillAreaHtargetFace.at(it)>0.5) //majority interieur
         gridH.drawFace(aBoard, it, DGtal::Color::Green);
       else {
-        if(fillAreaHtargetFace.at(it)<EPSILON || fabs(fillAreaHtargetFace.at(it)-1)<EPSILON) //pure pixels
+        if(fillAreaHtargetFace.at(it)<EPSILON || fabs(fillAreaHtargetFace.at(it)-1)<EPSILON) //pure pixels
           gridH.drawFace(aBoard, it, DGtal::Color::Red);
         else //majority exterieur
           gridH.drawFace(aBoard, it, DGtal::Color::Blue);
       }
     }
     Htarget.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/fillAreaFaceHtargetGauss.svg");
+    aBoard.saveSVG("../Results/fillAreaFaceHtargetGauss.svg");
     aBoard.clear();
   }
   
@@ -1244,7 +1138,7 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
         tgridF.drawFace(aBoard, it, DGtal::Color::Red);
     }
     Htarget.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/sigmaGauss.svg");
+    aBoard.saveSVG("../Results/sigmaGauss.svg");
     aBoard.clear();
   }
   
@@ -1272,7 +1166,7 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
     }
     Hinit.drawComplex(aBoard, Color::Gray);
     Htarget.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/zetaGauss.svg");
+    aBoard.saveSVG("../Results/zetaGauss.svg");
     aBoard.clear();
   }
   
@@ -1288,7 +1182,7 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
       else
         gridH.drawFace(aBoard, it, DGtal::Color::Red);
     }
-    aBoard.saveSVG("../Illustration/iotaGauss.svg");
+    aBoard.saveSVG("../Results/iotaGauss.svg");
     aBoard.clear();
   }
   
@@ -1320,7 +1214,7 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
     }
     Hinit.drawComplex(aBoard, Color::Gray);
     Htarget.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/epsilonGauss.svg");
+    aBoard.saveSVG("../Results/epsilonGauss.svg");
     aBoard.clear();
   }
   
@@ -1336,7 +1230,7 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
         gridH.drawFace(aBoard, it, DGtal::Color::Red);
     }
     Hinit.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/tauGauss.svg");
+    aBoard.saveSVG("../Results/tauGauss.svg");
     aBoard.clear();
   }
   
@@ -1352,7 +1246,7 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
       else
         gridH.drawFace(aBoard, it, DGtal::Color::Green);
     }
-    aBoard.saveSVG("../Illustration/borderFaceGauss.svg");
+    aBoard.saveSVG("../Results/borderFaceGauss.svg");
     aBoard.clear();
   }
   //Update tau value of border faces
@@ -1373,7 +1267,7 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
         gridH.drawFace(aBoard, it, DGtal::Color::Red);
     }
     Hinit.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/tauGauss2.svg");
+    aBoard.saveSVG("../Results/tauGauss2.svg");
     aBoard.clear();
   }
   
@@ -1383,21 +1277,21 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
     gridH.drawGrid(aBoard);
     gridH.drawComplex(aBoard, DGtal::Color::Green);
     gridH.drawFace(aBoard, maxIndex, DGtal::Color::Red);
-    aBoard.saveSVG("../Illustration/maxEpsilonGauss.svg");
+    aBoard.saveSVG("../Results/maxEpsilonGauss.svg");
     aBoard.clear();
   }
   //Line 12-26: Loop
   int nbIter=0;
   double a, h2 = maxIndex, f2 = phi.at(h2);
   while(epsilonValue.at(h2)>=0) {
-    std::cout<<"nbIter="<<nbIter<<": h2="<<h2<<", f2="<<f2;
+    std::cout<<"Gauss digitization: nbIter="<<nbIter<<": h2="<<h2<<", f2="<<f2;
     //Line 13
     Complex Hcurrent;
     //Hcurrent.initGridLines(gridH.vertical_lines, gridH.horizontal_lines);
     Hcurrent.initGridLines(tgridF.vertical_lines, tgridF.horizontal_lines);
     std::vector<int> inFace = Phi.at(f2);
     a = fillAreaHinitFace.at(h2);
-    if(tauValue.at(h2)) {//if simple cell
+    if(tauValue.at(h2)) {//if simple cell
       //Line 14-15: Update iota of h2
       //std::cout<<"Before: iotaValue.at(h2)="<<iotaValue.at(h2)<<std::endl;
       iotaValue.at(h2) = !iotaValue.at(h2); //Inverse state face
@@ -1415,7 +1309,7 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
             gridH.drawFace(aBoard, it, DGtal::Color::Red);
         }
         Hcurrent.drawComplex(aBoard, Color::Gray);
-        filename = "../Illustration/HcurrentGauss_s" + std::to_string(nbIter) + ".svg";
+        filename = "../Results/HcurrentGauss_s" + std::to_string(nbIter) + ".svg";
         aBoard.saveSVG(filename.c_str());
         aBoard.clear();
       }
@@ -1433,21 +1327,6 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
       std::vector<bool> tauHcurrent = tau(gridH, Hcurrent);
       for(size_t it=0; it<gridH.face.size(); it++)
         tauValue.at(it) = tauHcurrent.at(it);
-      /*
-      if(saveFile) {
-        gridH.drawGrid(aBoard);
-        for(size_t it=0; it<gridH.face.size(); it++) {
-          if(tauValue.at(it))
-            gridH.drawFace(aBoard, it, DGtal::Color::Green);
-          else
-            gridH.drawFace(aBoard, it, DGtal::Color::Red);
-        }
-        complexH.drawComplex(aBoard, Color::Gray);
-        filename = "../Illustration/tau_s" + std::to_string(nbIter) + ".svg";
-        aBoard.saveSVG(filename.c_str());
-        aBoard.clear();
-      }
-      */
       //Line 19 ????
     }
     else { //Line 20-21
@@ -1465,7 +1344,7 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
             gridH.drawFace(aBoard, it, DGtal::Color::Red);
         }
         Hcurrent.drawComplex(aBoard, Color::Gray);
-        filename = "../Illustration/HcurrentGauss_s" + std::to_string(nbIter) + ".svg";
+        filename = "../Results/HcurrentGauss_s" + std::to_string(nbIter) + ".svg";
         aBoard.saveSVG(filename.c_str());
         aBoard.clear();
       }
@@ -1500,7 +1379,7 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
         }
       }
       Hcurrent.drawComplex(aBoard, Color::Gray);
-      filename = "../Illustration/epsilonGauss_s" + std::to_string(nbIter) + ".svg";
+      filename = "../Results/epsilonGauss_s" + std::to_string(nbIter) + ".svg";
       aBoard.saveSVG(filename.c_str());
       aBoard.clear();
     }
@@ -1528,7 +1407,7 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
           gridH.drawFace(aBoard, it, DGtal::Color::Red);
       }
       Hcurrent.drawComplex(aBoard, Color::Gray);
-      filename = "../Illustration/tauGauss_s" + std::to_string(nbIter) + ".svg";
+      filename = "../Results/tauGauss_s" + std::to_string(nbIter) + ".svg";
       aBoard.saveSVG(filename.c_str());
       aBoard.clear();
     }
@@ -1553,7 +1432,7 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
         gridH.drawFace(aBoard, it, DGtal::Color::Red);
     }
     Hopt.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Illustration/HoptGauss.svg");
+    aBoard.saveSVG("../Results/HoptGauss.svg");
     aBoard.clear();
   }
   //Retreive integer points
@@ -1573,7 +1452,7 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
     if(saveFile) {
       cY.drawGrid(aBoard);
       cY.drawPixel(aBoard);
-      aBoard.saveSVG("../Illustration/objetYGauss.svg");
+      aBoard.saveSVG("../Results/objetYGauss.svg");
       aBoard.clear();
     }
   }
@@ -1582,11 +1461,22 @@ illustrationGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, boo
 
 int main()
 {
-  std::vector<Z2i::Point> X1 = readImage("test.pgm");
-  assert(X1.size()!=0);
+  std::vector<Z2i::Point> X;
+  
+  X.push_back(Z2i::Point(0,0));
+  X.push_back(Z2i::Point(0,1));
+  X.push_back(Z2i::Point(1,1));
+  
+  //multiple connected components
+  X.push_back(Z2i::Point(-2,-2));
+  X.push_back(Z2i::Point(-2,-1));
+  X.push_back(Z2i::Point(-2,0));
+
+  assert(X.size()!=0);
+
   AffineTransform t1(1.1,0.4,0.3,1.5,1,2,0,1);
-  illustrationMajority(X1,t1);
+  testMajority(X,t1);
   AffineTransform t2(1.1,0.4,0.3,1.2,1,2,0,1);
-  illustrationGauss(X1,t1);
+  testGauss(X,t1);
   return 1;
 }

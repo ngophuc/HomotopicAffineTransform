@@ -28,17 +28,6 @@ FIND_PACKAGE(Eigen3 REQUIRED)
 INCLUDE_DIRECTORIES(${EIGEN3_INCLUDE_DIR})
 LINK_DIRECTORIES(${EIGEN3_LIBRARY_DIRS})
 
-# Boost and its components
-find_package( Boost REQUIRED )
-if ( NOT Boost_FOUND )
-  message(STATUS "This project requires the Boost library, and will not be compiled.")
-  return()
-endif()
-
-# include for local directory
-
-# include for local package
-
 add_definitions(-g)
 
 # Creating entries for target: HomotopicAffineTransform
@@ -46,4 +35,4 @@ add_definitions(-g)
 
 #add_executable(${PROJECT_NAME} ${SRC_LIST})
 add_executable(${PROJECT_NAME} main.cpp Functions.h Functions.cpp Graph.hpp Complex.h Complex.cpp AffineTransform.h AffineTransform.cpp)
-target_link_libraries(${PROJECT_NAME} ${DGTAL_LIBRARIES} ${DGtalToolsLibDependencies} gmp gmpxx)
+target_link_libraries(${PROJECT_NAME} ${DGTAL_LIBRARIES} gmp gmpxx)

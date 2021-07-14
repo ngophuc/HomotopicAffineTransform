@@ -1280,6 +1280,7 @@ bool Complex::isSimpleFace(const std::vector<RationalPoint>& face) const
     return isSimpleFace(tmp.face.size()-1);
   else
     assert(false); //TODO return the simplicity of the face
+  return false;
 }
 
 bool Complex::isBorderVertex(int id_vertex) const
@@ -1297,7 +1298,7 @@ bool Complex::isBorderEdge(int id_edge) const
 
 bool Complex::isBorderFace(int id_face) const
 {
-  if(this->getBoundaryEdges(id_face).size()!=0 || this->getBoundaryVertices(id_face).size()!=0)
+  if(this->getBoundaryEdges(id_face).size()!=0 || this->getBoundaryVertices(id_face).size()!=0)
     return true;
   return false;
 }
