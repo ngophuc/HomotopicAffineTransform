@@ -3244,46 +3244,11 @@ illustrationGauss3(std::vector<Z2i::Point> X, AffineTransform t, string file = "
 
 int main()
 {
-  //testFunctions();
-  //return 1;
-  
   std::vector<Z2i::Point> X1 = readImage("test.pgm");
   assert(X1.size()!=0);
   AffineTransform t1(1.1,0.4,0.3,1.5,1,2,0,1);
   illustrationMajority2(X1,t1);
   AffineTransform t2(1.1,0.4,0.3,1.2,1,2,0,1);
   illustrationGauss2(X1,t1);
-  return 1;
-  
-  bool saveFile = true;
-  bool saveExpe = true;
-  bool useSaveFile = true;
-  int adj = 8;
-  int border = 2; //5 ellipse10-6
-  
-  string intputDir = "../Samples/";
-  string outputDir = "../Results/";//ball_r5//ellipse_10-6
-  string filename = "jmiv";//ball_r5 dgmm3 rings5 smile4 ellipse10-6 ball_r5 jmiv
-  string extenstion = ".pgm";
-  string inputFile = intputDir + filename + extenstion;
-  string outputFile = outputDir + filename;
-  
-  std::vector<Z2i::Point> X = readImage(inputFile);
-  assert(X.size()!=0);
-  std::cout<<"X.size="<<X.size()<<std::endl;
-  
-  //AffineTransform t(1.2,0.1,0.7,1.5,1,3,2,5); //dgmm3
-  //AffineTransform t(1.2,-0.5,-0.1,1.1,1,2,0,1); //dgmm3 2
-  //AffineTransform t(1.5,-0.2,-0.5,1.2,1,2,0,1); //rings5
-  //AffineTransform t(1.2,-1.5,0.2,1.5,1,3,2,5); //smile4
-  //AffineTransform t(1.1,0.8,0.3,1.7,1,3,2,5); // ellipse10-6
-  //AffineTransform t(1.5,0.2,0.5,1.2,1,5,1,5); // ball_r5
-  //AffineTransform t(0.9,0.3,0.2,1.1,1,5,1,5); // ellipse_10-6 2
-  //AffineTransform t(1.2,1.5,0.2,1.5,1,3,2,5); //jmiv
-  AffineTransform t(1.1,0.4,0.3,1.2,1,2,0,1); // affine
-  
-  illustrationMajority3(X, t, outputFile, border, adj, saveExpe, saveFile);
-  //illustrationGauss3(X, t, outputFile, border, adj, saveExpe, saveFile);
-  
   return 1;
 }
