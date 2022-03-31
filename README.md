@@ -14,13 +14,13 @@ cmake .. -DDGtal_DIR=DGTAL_DIR [-DCMAKE_BUILD_TYPE=Release / Debug]
 make -j4
 
 ## Execution
-./HomotopicAffineTransform -i ../Samples/ball_r3.pgm --a11 1.5 --a12 0.2 --a21 0.5 --a22 1.2
+./HomotopicAffineTransform -i ../Samples/ball.pgm --a11 1.5 --a12 0.2 --a21 0.5 --a22 1.2
 
-./HomotopicAffineTransform -i ../Samples/ball_r3.pgm -o ../Results/ -s --a11 1.5 --a12 0.2 --a21 0.5 --a22 1.2
+./HomotopicAffineTransform -i ../Samples/ball.pgm -o ../Results/ -s --a11 1.5 --a12 0.2 --a21 0.5 --a22 1.2
 
-./HomotopicAffineTransform -i ../Samples/ball_r3.pgm -o ../Results/ -s --a11 1.5 --a12 0.2 --a21 0.5 --a22 1.2 -m 0
+./HomotopicAffineTransform -i ../Samples/ball.pgm -o ../Results/ -s --a11 1.5 --a12 0.2 --a21 0.5 --a22 1.2 -m 0
 
-./HomotopicAffineTransform -i ../Samples/ball_r3.pgm -o ../Results/ -s --a11 1.5 --a12 0.2 --a21 0.5 --a22 1.2 -m 1
+./HomotopicAffineTransform -i ../Samples/ball.pgm -o ../Results/ -s --a11 1.5 --a12 0.2 --a21 0.5 --a22 1.2 -m 1
 
 ## Help
 ./HomotopicAffineTransform -h
