@@ -1,5 +1,12 @@
 #include "Functions.h"
 
+RationalPoint getIntegerPoint(RationalPoint p)
+{
+  Z2i::Point pp = Z2i::Point(int(getRealValue(p.first)), int(getRealValue(p.second))); //pixel center
+  RationalPoint pr = RationalPoint(Rational(pp[0]),Rational(pp[1]));
+  return pr;
+}
+
 //Equation of line passing through two points : ax+by+c=0
 //(y1−y2)x+(x2−x1)y+x1y2−x2y1=0
 Line getLineFromPoints(RationalPoint p1, RationalPoint p2)
@@ -137,17 +144,6 @@ std::vector<RationalPoint> sortCollinearPoints(std::vector<RationalPoint> vecP)
   return vecP_sorted;
 }
 
-// Given three colinear points p, q, r, the function checks if
-// point q lies on line segment 'pr'
-/*
- bool onSegment(RationalPoint p, RationalPoint q, RationalPoint r)
- {
- if (q.first <= std::max(p.first, r.first) && q.first >= std::min(p.first, r.first) &&
- q.second <= std::max(p.second, r.second) && q.second >= min(p.second, r.second))
- return true;
- return false;
- }
- */
 // Given three points p, q, r, the function checks if
 // point q lies on line segment 'pr'
 bool onSegment(RationalPoint p, RationalPoint q, RationalPoint r)
@@ -261,56 +257,6 @@ std::vector<RationalPoint> intersection(const std::vector<RationalPoint>& face, 
 }
 
 //see https://www.geeksforgeeks.org/how-to-check-if-a-given-point-lies-inside-a-polygon/
-/*
- bool isInsidePolygon(const std::vector<RationalPoint>& polygon, RationalPoint p)
- {
- int n = polygon.size();
- // There must be at least 3 vertices in polygon[]
- if (n < 3)  return false;
- 
- // Create a point for line segment from p to infinite (horizontal direction)
- RationalPoint extreme1 = RationalPoint(Rational(INT_MAX), Rational(p.second));
- // Degenerate case when the intersection point is a vertex of polygon, thus lauch two rays
- // Create a point for line segment from p to infinite (diagonal direction)
- //FIXME: intersect at the intersection
- //RationalPoint extreme2 = RationalPoint(Rational(INT_MAX), Rational(INT_MAX));
- // Create a point for line segment from p to infinite (vertical direction)
- RationalPoint extreme2 = RationalPoint(Rational(p.first), Rational(INT_MAX));
- // Count intersections of the above line with sides of polygon
- int count1 = 0, count2 = 0, i = 0;
- do
- {
- int next = (i+1)%n;
- 
- // Check if the line segment from 'p' to 'extreme' intersects
- // with the line segment from 'polygon[i]' to 'polygon[next]'
- bool intersect1 = isIntersect(polygon.at(i), polygon.at(next), p, extreme1);
- if (intersect1)
- {
- // If the point 'p' is colinear with line segment 'i-next',
- // then check if it lies on segment. If it lies, return true,
- // otherwise false
- if (orientation(polygon[i], p, polygon[next]) == 0)
- return onSegment(polygon[i], p, polygon[next]);
- count1++;
- }
- bool intersect2 = isIntersect(polygon.at(i), polygon.at(next), p, extreme2);
- if (intersect2)
- {
- // If the point 'p' is colinear with line segment 'i-next',
- // then check if it lies on segment. If it lies, return true,
- // otherwise false
- if (orientation(polygon[i], p, polygon[next]) == 0)
- return onSegment(polygon[i], p, polygon[next]);
- count2++;
- }
- i = next;
- } while (i != 0);
- // Return true if count is odd, false otherwise
- return (count1&1)||(count2&1);  // Same as (count%2 == 1)
- }
- */
-
 bool isInsidePolygon(const std::vector<RationalPoint>& polygon, RationalPoint p)
 {
   int n = polygon.size();
@@ -368,42 +314,6 @@ bool isInsidePolygon(const std::vector<RationalPoint>& polygon, RationalPoint p)
   // Return true if count is odd, false otherwise
   return (count&1);  // Same as (count%2 == 1)
 }
-
-/*
- bool isInterieurPolygon(const std::vector<RationalPoint>& polygon, RationalPoint p)
- {
- int n = polygon.size();
- // There must be at least 3 vertices in polygon[]
- if (n < 3)  return false;
- 
- // Create a point for line segment from p to infinite
- RationalPoint extreme = RationalPoint(Rational(INT_MAX), Rational(p.second));
- 
- // Count intersections of the above line with sides of polygon
- int count = 0, i = 0;
- do
- {
- int next = (i+1)%n;
- 
- // Check if the line segment from 'p' to 'extreme' intersects
- // with the line segment from 'polygon[i]' to 'polygon[next]'
- if (isIntersect(polygon.at(i), polygon.at(next), p, extreme))
- {
- // If the point 'p' is colinear with line segment 'i-next',
- // then check if it lies on segment. If it lies, return false,
- // otherwise true
- if (orientation(polygon[i], p, polygon[next]) == 0)
- return !onSegment(polygon[i], p, polygon[next]); //FIXME !
- 
- count++;
- }
- i = next;
- } while (i != 0);
- 
- // Return true if count is odd, false otherwise
- return count&1;  // Same as (count%2 == 1)
- }
- */
 
 bool isInsidePixel(DGtal::Z2i::Point px, RationalPoint p)
 {
@@ -503,6 +413,51 @@ int findVertex(const std::vector<Z2i::Point>& vector, Z2i::Point v)
   if(vector.at(it)==v)
     return it;
   return -1;
+}
+
+bool containEdge(const std::vector<RationalPoint>& face, RationalPoint e1, RationalPoint e2)
+{
+  if(findVertex(face, e1) && findVertex(face, e2))
+    return true;
+  return false;
+}
+
+bool containEdge(const std::vector<int>& face, std::pair<int,int> e)
+{
+  if(containElement(face, e.first) && containElement(face, e.second))
+    return true;
+  return false;
+}
+
+int findEdege(std::vector<std::pair<int, int> > edges, std::pair<int,int> e)
+{
+  for(size_t it=0; it<edges.size(); it++) {
+    if(edges.at(it).first==e.first && edges.at(it).second==e.second)
+      return  it;
+    if(edges.at(it).first==e.second && edges.at(it).second==e.first)
+      return  it;
+  }
+  return -1;
+}
+
+std::vector<int> findContainEdge(const std::vector<std::vector<RationalPoint> >& face, RationalPoint e1, RationalPoint e2)
+{
+  std::vector<int> f;
+  for(size_t it=0; it<face.size(); it++) {
+    if(containEdge(face.at(it), e1, e2))
+      f.push_back(it);
+  }
+  return f;
+}
+
+std::vector<int> findContainEdge(const std::vector<std::vector<int> >& face, std::pair<int,int> e)
+{
+  std::vector<int> f;
+  for(size_t it=0; it<face.size(); it++) {
+    if(containEdge(face.at(it), e))
+      f.push_back(it);
+  }
+  return f;
 }
 
 bool containElement(const std::vector<int>& vector, int element)
@@ -729,12 +684,6 @@ double getIntersectArea(const std::vector<RationalPoint>& polygon1, const std::v
 double getIntersectArea(const std::vector<std::vector<RationalPoint> >& polygon1, const std::vector<std::vector<RationalPoint> >& polygon2, const std::vector<std::vector<RationalPoint> >& faces)
 {
   double d=0,d1=0,d2=0;
-  /*
-   for(int it1=0; it1<polygon1.size(); it1++)
-   for(int it2=0; it2<polygon2.size(); it2++)
-   for(int it3=0; it3<faces.size(); it3++)
-   d+=getIntersectArea(polygon1.at(it1),polygon2.at(it2),faces.at(it3));
-   */
   int count=0;
   bool check=false;
   for(int it3=0; it3<faces.size(); it3++) {
@@ -791,21 +740,6 @@ Line getLine(std::pair<RationalPoint, RationalPoint> p)
   RationalPoint p2 = p.second;
   return getLineFromPoints(p1, p2);
 }
-
-/*
- bool isConvex(std::vector<RationalPoint> points)
- {
- std::vector<double> sides;
- for(int it=0; it<points.size()-1; it++) {
- double d = distance(points.at(it),points.at(it+1));
- sides.push_back(d);
- }
- double d = distance(points.back(),points.front());
- sides.push_back(d);
- 
- return isConvex(sides);
- }
- */
 
 // Return the cross product AB x BC.
 // The cross product is a vector perpendicular to AB
@@ -1047,7 +981,6 @@ std::pair<Z2i::RealPoint,Z2i::RealPoint> getBoundingBox(const std::vector<Z2i::R
   double minx=points.front()[0], maxx=points.front()[0];
   double miny=points.front()[1], maxy=points.front()[1];
   for(int it=1; it<points.size(); it++) {
-    //std::cout<<"Point="<<points.at(it)<<std::endl;
     if(minx>points.at(it)[0])
       minx=points.at(it)[0];
     if(maxx<points.at(it)[0])
@@ -1056,7 +989,6 @@ std::pair<Z2i::RealPoint,Z2i::RealPoint> getBoundingBox(const std::vector<Z2i::R
       miny=points.at(it)[1];
     if(maxy<points.at(it)[1])
       maxy=points.at(it)[1];
-    //std::cout<<"minx="<<minx<<", miny="<<miny<<" and maxx="<<maxx<<", maxy="<<maxy<<std::endl;
   }
   Z2i::RealPoint p1 = Z2i::Point(minx,miny);
   Z2i::Point p2 = Z2i::Point(maxx,maxy);
@@ -1083,548 +1015,8 @@ Z2i::DigitalSet getDigitalSet(std::vector<Z2i::Point> point_set)
   return shape_set;
 }
 
-bool isSimplePoint4C(Z2i::DigitalSet shape_set, Z2i::Point point)
-{
-  Z2i::Object4_8 shape( Z2i::dt4_8, shape_set );
-  return shape.isSimple(point);
-}
-
-bool isSimplePoint8C(Z2i::DigitalSet shape_set, Z2i::Point point)
-{
-  Z2i::Object8_4 shape( Z2i::dt8_4, shape_set );
-  return shape.isSimple(point);
-}
-
-bool isSimplePoint(Z2i::DigitalSet shape_set, Z2i::Point point, int adjacency)
-{
-  if(adjacency==4)
-    return  isSimplePoint4C(shape_set,point);
-  return isSimplePoint8C(shape_set,point);
-}
-
-bool isSimplePoint(std::vector<Z2i::Point> point_set, Z2i::Point point, int adjacency)
-{
-  /*
-   std::pair<Z2i::Point, Z2i::Point> bb = getBoundingBox(point_set);
-   Z2i::Domain domain( bb.first, bb.second );
-   Z2i::DigitalSet shape_set( domain );
-   for (auto it=point_set.begin(); it!=point_set.end(); it++)
-   shape_set.insertNew(*it);
-   */
-  Z2i::DigitalSet shape_set = getDigitalSet(point_set);
-  return isSimplePoint(shape_set, point, adjacency);
-}
-
-Z2i::DigitalSet getSimplifiedPoint(Z2i::DigitalSet shape_set, int adjacency)
-{
-  Z2i::DigitalSet S(shape_set.domain());
-  if(adjacency==8) {
-    Z2i::Object8_4 shape( Z2i::dt8_4, shape_set );
-    int nb_simple=0;
-    Z2i::DigitalSet::Iterator it, itE;
-    do {
-      Z2i::DigitalSet & S = shape.pointSet();
-      std::queue<Z2i::DigitalSet::Iterator> Q;
-      it = S.begin();
-      itE = S.end();
-      for ( ; it != itE; ++it )
-      if ( shape.isSimple( *it ) )
-        Q.push( it );
-      nb_simple = 0;
-      while ( ! Q.empty() ) {
-        Z2i::DigitalSet::Iterator itt = Q.front();
-        Q.pop();
-        if ( shape.isSimple( *itt ) ) {
-          S.erase( *itt );
-          ++nb_simple;
-        }
-      }
-    } while ( nb_simple != 0 );
-    S = shape.pointSet();
-  }
-  else { //adjcency == 4
-    Z2i::Object4_8 shape( Z2i::dt4_8, shape_set );
-    int nb_simple=0;
-    Z2i::DigitalSet::Iterator it, itE;
-    do {
-      Z2i::DigitalSet & S = shape.pointSet();
-      std::queue<Z2i::DigitalSet::Iterator> Q;
-      it = S.begin();
-      itE = S.end();
-      for ( ; it != itE; ++it )
-      if ( shape.isSimple( *it ) )
-        Q.push( it );
-      nb_simple = 0;
-      while ( ! Q.empty() ) {
-        Z2i::DigitalSet::Iterator itt = Q.front();
-        Q.pop();
-        if ( shape.isSimple( *itt ) ) {
-          S.erase( *itt );
-          ++nb_simple;
-        }
-      }
-    } while ( nb_simple != 0 );
-    S = shape.pointSet();
-  }
-  return S;
-}
-
-std::vector<Z2i::Point> getSimplifiedPoint(std::vector<Z2i::Point> point_set, int adjacency)
-{
-  /*
-   std::pair<Z2i::Point, Z2i::Point> bb = getBoundingBox(point_set);
-   Z2i::Point p1 = bb.first - Z2i::Point(1,1);
-   Z2i::Point p2 = bb.second + Z2i::Point(1,1);
-   Z2i::Domain domain( p1, p2 );
-   Z2i::DigitalSet shape_set( domain );
-   for(int it=0; it<point_set.size(); it++)
-   shape_set.insertNew(point_set.at(it));
-   */
-  Z2i::DigitalSet shape_set = getDigitalSet(point_set);
-  Z2i::DigitalSet S = getSimplifiedPoint(shape_set,adjacency);
-  std::vector<Z2i::Point> vP = getDigitalSetPoint(S);
-  //for(auto it=S.begin(); it!=S.end(); it++)
-  //    vP.push_back(*it);
-  return vP;
-}
-
-Z2i::DigitalSet getSimplifiedPoint(Z2i::DigitalSet shape_set, std::vector<Z2i::Point> fixed_point, int adjacency)
-{
-  std::vector<Z2i::Point> point_set = getDigitalSetPoint(shape_set);
-  //for(auto it=shape_set.begin(); it != shape_set.end(); it++ )
-  //    point_set.push_back(*it);
-  std::vector<Z2i::Point> point_set_output;
-  //First pass
-  for(int it=0; it<point_set.size(); it++) { //for each point of point_set
-    if(!containElement(fixed_point, point_set.at(it))) {
-      if (isSimplePoint(shape_set, point_set.at(it),adjacency)) //remove point for the shape
-        shape_set.erase(point_set.at(it));
-      else
-        point_set_output.push_back(point_set.at(it));
-    }
-  }
-  //Second pass to remove all other simple points
-  int nbSimple=0;
-  do {
-    nbSimple=0;
-    for(int it=0; it<point_set_output.size(); it++) { //for each point of YY
-      if(!containElement(fixed_point, point_set_output.at(it))) {
-        if (isSimplePoint(shape_set, point_set_output.at(it),adjacency)) { //remove point for the shape
-          shape_set.erase(point_set_output.at(it));
-          nbSimple++;
-        }
-      }
-    }
-    point_set_output.clear();
-    point_set_output = getDigitalSetPoint(shape_set);
-    //for(auto it=shape_set.begin(); it!=shape_set.end(); it++)
-    //    point_set_output.push_back(*it);
-  } while (nbSimple!=0);
-  /*
-   Z2i::DigitalSet shape_set_output(shape_set.domain());
-   for(int it=0; it<point_set_output.size(); it++)
-   shape_set_output.insertNew(point_set_output.at(it));
-   return shape_set_output;
-   */
-  return getDigitalSet(point_set_output);
-}
-
-//This function is the same as getSimplifiedPoint
-//Minimize with Eq. 17: min (|X| - |Y|) => remove all simple points from setY \ setXt
-Z2i::DigitalSet getMinimizePoint(Z2i::DigitalSet shape_set, std::vector<Z2i::Point> fixed_point, int adjacency)
-{
-  std::vector<Z2i::Point> point_set = getDigitalSetPoint(shape_set);
-  //for(auto it=shape_set.begin(); it != shape_set.end(); it++ )
-  //    point_set.push_back(*it);
-  std::vector<Z2i::Point> point_set_output;
-  //point_set_output = fixed_point; //FIXME: init point_set_output with fixed_point
-  //First pass
-  for(int it=0; it<point_set.size(); it++) { //for each point of point_set
-    if(!containElement(fixed_point, point_set.at(it))) {
-      if (isSimplePoint(shape_set, point_set.at(it),adjacency)) //remove point for the shape
-        shape_set.erase(point_set.at(it));
-      else
-        point_set_output.push_back(point_set.at(it));
-    }
-  }
-  //Second pass to remove all other simple points
-  int nbSimple=0;
-  do {
-    nbSimple=0;
-    for(int it=0; it<point_set_output.size(); it++) { //for each point of YY
-      if(!containElement(fixed_point, point_set_output.at(it))) {
-        if (isSimplePoint(shape_set, point_set_output.at(it),adjacency)) { //remove point for the shape
-          shape_set.erase(point_set_output.at(it));
-          nbSimple++;
-        }
-      }
-    }
-    point_set_output.clear();
-    point_set_output = getDigitalSetPoint(shape_set);
-    //for(auto it=shape_set.begin(); it!=shape_set.end(); it++)
-    //    point_set_output.push_back(*it);
-  } while (nbSimple!=0);
-  /*
-   Z2i::DigitalSet shape_set_output(shape_set.domain());
-   for(int it=0; it<point_set_output.size(); it++)
-   shape_set_output.insertNew(point_set_output.at(it));
-   return shape_set_output;
-   */
-  return getDigitalSet(point_set_output);
-}
-
-//Minimize with Eq. 15: min ( |Xt \ Y|) + |Y \ Xt| ) for Y computed from setY \ setXt
-Z2i::DigitalSet getMinimizeDifference(Z2i::DigitalSet shape_set, std::vector<Z2i::Point> fixed_point, int adjacency)
-{
-  std::vector<Z2i::Point> point_set = getDigitalSetPoint(shape_set);
-  //for(auto it=shape_set.begin(); it != shape_set.end(); it++ )
-  //    point_set.push_back(*it);
-  Z2i::DigitalSet shape_set_fixed_point = getDigitalSet(fixed_point);
-  /*
-   Z2i::DigitalSet shape_set_fixed_point( shape_set.domain() );
-   for(int it=0; it<fixed_point.size(); it++)
-   shape_set_fixed_point.insertNew(fixed_point.at(it));
-   */
-  std::vector<Z2i::Point> point_set_output;
-  //point_set_output = fixed_point; //FIXME: init point_set_output with fixed_point
-  //First pass
-  for(int it=0; it<point_set.size(); it++) { //for each point of point_set
-    if(!containElement(fixed_point, point_set.at(it))) {
-      if (isSimplePoint(shape_set, point_set.at(it),adjacency)) {
-        int diff_before = getSymetricDifference(shape_set_fixed_point, shape_set);
-        //remove point from the shape if the energy decreases
-        shape_set.erase(point_set.at(it));
-        int diff_after = getSymetricDifference(shape_set_fixed_point, shape_set);
-        if(diff_before<diff_after)//otherwise, put the point back
-          shape_set.insertNew(point_set.at(it));
-      }
-      else
-        point_set_output.push_back(point_set.at(it));
-    }
-  }
-  //Second pass to remove all other simple points
-  int nbSimple=0;
-  do {
-    nbSimple=0;
-    for(int it=0; it<point_set_output.size(); it++) { //for each point of YY
-      if(!containElement(fixed_point, point_set_output.at(it))) {
-        if (isSimplePoint(shape_set, point_set_output.at(it),adjacency)) {
-          int diff_before = getSymetricDifference(shape_set_fixed_point, shape_set);
-          //remove point from the shape if the energy is reduced
-          shape_set.erase(point_set.at(it));
-          nbSimple++;
-          int diff_after = getSymetricDifference(shape_set_fixed_point, shape_set);
-          if(diff_before<diff_after) {//otherwise, put the point back
-            shape_set.insertNew(point_set.at(it));
-            nbSimple--;
-          }
-        }
-      }
-    }
-    point_set_output.clear();
-    point_set_output = getDigitalSetPoint(shape_set);
-    //for(auto it=shape_set.begin(); it!=shape_set.end(); it++)
-    //    point_set_output.push_back(*it);
-  } while (nbSimple!=0);
-  /*
-   Z2i::DigitalSet shape_set_output(shape_set.domain());
-   for(int it=0; it<point_set_output.size(); it++)
-   shape_set_output.insertNew(point_set_output.at(it));
-   return shape_set_output;
-   */
-  return getDigitalSet(point_set_output);
-}
-
-Z2i::DigitalSet getMinimizeDistance(Z2i::DigitalSet shape_set, std::vector<Z2i::Point> fixed_point, int adjacency)
-{
-  std::vector<Z2i::Point> point_set = getDigitalSetPoint(shape_set);
-  //for(auto it=shape_set.begin(); it != shape_set.end(); it++ )
-  //    point_set.push_back(*it);
-  Z2i::DigitalSet shape_set_fixed_point = getDigitalSet(fixed_point);
-  /*
-   Z2i::DigitalSet shape_set_fixed_point( shape_set.domain() );
-   for(int it=0; it<fixed_point.size(); it++)
-   shape_set_fixed_point.insertNew(fixed_point.at(it));
-   */
-  std::vector<Z2i::Point> point_set_output;
-  //point_set_output = fixed_point; //FIXME: init point_set_output with fixed_point
-  Z2i::RealPoint center_fixed_point = getBaryCenter(fixed_point);
-  //First pass
-  for(int it=0; it<point_set.size(); it++) { //for each point of point_set
-    if(!containElement(fixed_point, point_set.at(it))) {
-      if (isSimplePoint(shape_set, point_set.at(it),adjacency)) {
-        int dist_before = distance(center_fixed_point, getBaryCenter(getDigitalSetPoint(shape_set)));
-        //remove point from the shape if the energy is reduced
-        shape_set.erase(point_set.at(it));
-        int dist_after = distance(center_fixed_point, getBaryCenter(getDigitalSetPoint(shape_set)));
-        if(dist_before<dist_after)//otherwise, put the point back
-          shape_set.insertNew(point_set.at(it));
-      }
-      else
-        point_set_output.push_back(point_set.at(it));
-    }
-  }
-  //Second pass to remove all other simple points
-  int nbSimple=0;
-  do {
-    nbSimple=0;
-    for(int it=0; it<point_set_output.size(); it++) { //for each point of YY
-      if(!containElement(fixed_point, point_set_output.at(it))) {
-        if (isSimplePoint(shape_set, point_set_output.at(it),adjacency)) {
-          int diff_before = distance(center_fixed_point, getBaryCenter(getDigitalSetPoint(shape_set)));
-          //remove point from the shape if the energy decreases
-          shape_set.erase(point_set.at(it));
-          nbSimple++;
-          int diff_after = distance(center_fixed_point, getBaryCenter(getDigitalSetPoint(shape_set)));
-          if(diff_before<diff_after) {//otherwise, put the point back
-            shape_set.insertNew(point_set.at(it));
-            nbSimple--;
-          }
-        }
-      }
-    }
-    point_set_output.clear();
-    point_set_output = getDigitalSetPoint(shape_set);
-    //for(auto it=shape_set.begin(); it!=shape_set.end(); it++)
-    //    point_set_output.push_back(*it);
-  } while (nbSimple!=0);
-  /*
-   Z2i::DigitalSet shape_set_output(shape_set.domain());
-   for(int it=0; it<point_set_output.size(); it++)
-   shape_set_output.insertNew(point_set_output.at(it));
-   return shape_set_output;
-   */
-  return getDigitalSet(point_set_output);
-}
-
-std::vector<Z2i::Point> getMinimizeDigitization(std::vector<Z2i::Point> point_set, std::vector<Z2i::Point> fixed_point, int adjacency, int method)
-{
-  /*
-   std::pair<Z2i::Point, Z2i::Point> bb = getBoundingBox(point_set);
-   Z2i::Point p1 = bb.first - Z2i::Point(1,1);
-   Z2i::Point p2 = bb.second + Z2i::Point(1,1);
-   Z2i::Domain domain( p1, p2 );
-   Z2i::DigitalSet shape_set( domain );
-   for(int it=0; it<point_set.size(); it++)
-   shape_set.insertNew(point_set.at(it));
-   */
-  Z2i::DigitalSet shape_set = getDigitalSet(point_set);
-  if(method==0) {
-    Z2i::DigitalSet S = getSimplifiedPoint(shape_set, fixed_point, adjacency);
-    return getDigitalSetPoint(S);
-  }
-  else if(method==1) { //Eq. 17
-    Z2i::DigitalSet S = getMinimizePoint(shape_set, fixed_point, adjacency);
-    return getDigitalSetPoint(S);
-  }
-  else if(method==2) { //Eq. 15
-    Z2i::DigitalSet S = getMinimizeDifference(shape_set, fixed_point, adjacency);
-    return getDigitalSetPoint(S);
-  }
-  else { //if(method==3) //Eq. 18
-    Z2i::DigitalSet S = getMinimizeDistance(shape_set, fixed_point, adjacency);
-    return getDigitalSetPoint(S);
-  }
-  /*
-   std::vector<Z2i::Point> point_set_output;
-   for(auto it=S.begin(); it!=S.end(); it++)
-   point_set_output.push_back(*it);
-   return point_set_output;
-   */
-  //return getDigitalSetPoint(S);
-}
-
-
-std::vector<Z2i::DigitalSet> getConnectedComponent4C(Z2i::DigitalSet shape_set)
-{
-  typedef Object<Z2i::DT4_8, Z2i::DigitalSet> ObjectType;
-  ObjectType object( Z2i::dt4_8, shape_set );
-  std::vector<ObjectType> objects;
-  std::back_insert_iterator< std::vector< ObjectType > > inserter( objects );
-  object.writeComponents( inserter ); //Compute connected components
-  std::vector<Z2i::DigitalSet> shapes;
-  for(int it=0; it<objects.size(); it++) {
-    Z2i::DigitalSet shape = ObjectType( objects[ it ] ).pointSet();
-    shapes.push_back(shape);
-  }
-  return shapes;
-}
-
-std::vector<Z2i::DigitalSet> getConnectedComponent8C(Z2i::DigitalSet shape_set)
-{
-  typedef Object<Z2i::DT8_4, Z2i::DigitalSet> ObjectType;
-  ObjectType object( Z2i::dt8_4, shape_set );
-  std::vector<ObjectType> objects;
-  std::back_insert_iterator< std::vector< ObjectType > > inserter( objects );
-  object.writeComponents( inserter ); //Compute connected components
-  std::vector<Z2i::DigitalSet> shapes;
-  for(int it=0; it<objects.size(); it++) {
-    Z2i::DigitalSet shape = ObjectType( objects[ it ] ).pointSet();
-    shapes.push_back(shape);
-  }
-  return shapes;
-}
-
-std::vector<Z2i::DigitalSet> getConnectedComponent(Z2i::DigitalSet shape_set, int adjacency)
-{
-  if(adjacency==4)
-    return getConnectedComponent4C(shape_set);
-  else //adjacency==8
-    return getConnectedComponent8C(shape_set);
-}
-
-std::vector<std::vector<Z2i::Point> > getConnectedComponent(std::vector<Z2i::Point> point_set, int adjacency)
-{
-  /*
-   std::pair<Z2i::Point, Z2i::Point> bb = getBoundingBox(point_set);
-   Z2i::Point p1 = bb.first - Z2i::Point(1,1);
-   Z2i::Point p2 = bb.second + Z2i::Point(1,1);
-   Z2i::Domain domain( p1, p2 );
-   Z2i::DigitalSet shape_set( domain );
-   for(int it=0; it<point_set.size(); it++)
-   shape_set.insertNew(point_set.at(it));
-   */
-  Z2i::DigitalSet shape_set = getDigitalSet(point_set);
-  std::vector<Z2i::DigitalSet> shapes = getConnectedComponent(shape_set,adjacency);
-  std::vector<std::vector<Z2i::Point> > vP;
-  for(int it=0; it<shapes.size(); it++) {
-    std::vector<Z2i::Point> P = getDigitalSetPoint(shapes.at(it));
-    //for(auto it_bis=shapes.at(it).begin(); it_bis!=shapes.at(it).end(); it_bis++)
-    //    P.push_back(*it_bis);
-    vP.push_back(P);
-  }
-  return vP;
-}
-
-std::vector<int> getIdConnectedComponent(std::vector<Z2i::Point> point_set, int adjacency)
-{
-  std::vector<int> idCC(point_set.size(),-1);
-  Z2i::DigitalSet shape_set = getDigitalSet(point_set);
-  std::vector<Z2i::DigitalSet> shapes = getConnectedComponent(shape_set,adjacency);
-  Z2i::Point p;
-  int id;
-  
-  for(size_t it=0; it<shapes.size(); it++) {
-    std::vector<Z2i::Point> vP = getDigitalSetPoint(shapes.at(it));
-    for(size_t it_bis=0; it_bis<vP.size(); it_bis++) {
-      p = vP.at(it_bis);
-      id = findVertex(point_set, p);
-      assert(id!=-1);
-      idCC.at(id)=it; //associat the id of CC
-    }
-  }
-  for(size_t it=0; it<idCC.size(); it++)
-  assert(idCC.at(it)!=-1);
-  return  idCC;
-}
-
-int getBetii0(Z2i::DigitalSet shape_set, int adjacency)
-{
-  std::vector<Z2i::DigitalSet> shapes = getConnectedComponent(shape_set,adjacency);
-  return shapes.size();
-}
-
-int getBetii1(Z2i::DigitalSet shape_set, int adjacency)
-{
-  Z2i::DigitalSet complement(shape_set.domain());
-  complement.assignFromComplement(shape_set);
-  //std::cout<<"complement size="<<complement.size()<<std::endl;
-  std::vector<Z2i::DigitalSet> shapes = getConnectedComponent(complement,adjacency);
-  return shapes.size()-1;
-}
-
-int getEulerCharacteristic(Z2i::DigitalSet shape_set, int adjacency)
-{
-  return getBetii0(shape_set, adjacency) - getBetii1(shape_set, 12 - adjacency);
-}
-
-int getBetii0(std::vector<Z2i::Point> point_set, int adjacency)
-{
-  /*
-   std::pair<Z2i::Point, Z2i::Point> bb = getBoundingBox(point_set);
-   Z2i::Point p1 = bb.first - Z2i::Point(1,1);
-   Z2i::Point p2 = bb.second + Z2i::Point(1,1);
-   Z2i::Domain domain( p1, p2 );
-   Z2i::DigitalSet shape_set( domain );
-   for(int it=0; it<point_set.size(); it++)
-   shape_set.insertNew(point_set.at(it));
-   */
-  Z2i::DigitalSet shape_set = getDigitalSet(point_set);
-  return getBetii0(shape_set,adjacency);
-}
-int getBetii1(std::vector<Z2i::Point> point_set, int adjacency)
-{
-  /*
-   std::pair<Z2i::Point, Z2i::Point> bb = getBoundingBox(point_set);
-   Z2i::Point p1 = bb.first - Z2i::Point(1,1);
-   Z2i::Point p2 = bb.second + Z2i::Point(1,1);
-   Z2i::Domain domain( p1, p2 );
-   Z2i::DigitalSet shape_set( domain );
-   for(int it=0; it<point_set.size(); it++)
-   shape_set.insertNew(point_set.at(it));
-   */
-  Z2i::DigitalSet shape_set = getDigitalSet(point_set);
-  return getBetii1(shape_set,adjacency);
-}
-
-int getEulerCharacteristic(std::vector<Z2i::Point> point_set, int adjacency)
-{
-  if(point_set.size()==0)
-    return -1;
-  return getBetii0(point_set, adjacency) - getBetii1(point_set, 12 - adjacency);
-}
-
-bool isHomotopopyEquivalence(Z2i::DigitalSet shape1, Z2i::DigitalSet shape2, int adjacency)
-{
-  int euler1 = getEulerCharacteristic(shape1, adjacency);
-  int euler2 = getEulerCharacteristic(shape2, adjacency);
-  std::cout<<"euler1="<<euler1<<" and euler2="<<euler2<<std::endl;
-  return euler1==euler2;
-}
-
-bool isHomotopopyEquivalence(std::vector<Z2i::Point> shape1, std::vector<Z2i::Point> shape2, int adjacency)
-{
-  int euler1 = getEulerCharacteristic(shape1, adjacency);
-  int euler2 = getEulerCharacteristic(shape2, adjacency);
-  std::cout<<"euler1="<<euler1<<" and euler2="<<euler2<<std::endl;
-  return euler1==euler2;
-}
-
-void writePoints(std::vector<Z2i::Point> pts, std::string filename)
-{
-  std::ofstream myfile;
-  myfile.open (filename);
-  myfile << pts.size()<<"\n";
-  for(auto it=pts.begin(); it!=pts.end(); it++)
-  myfile << (*it)[0]<<" "<<(*it)[1]<<"\n";
-  myfile.close();
-}
-
 std::ostream& operator<<(std::ostream& os, const RationalPoint p)
 {
   os<<"("<<p.first<<","<<p.second<<")";
   return os;
 }
-
-std::vector<std::vector<RationalPoint> > sortAreaFaces(std::vector<std::vector<RationalPoint> > faces)
-{
-  std::vector<std::vector<RationalPoint> > sFaces;
-  std::vector<double> vecArea;
-  for(size_t it=0; it<faces.size(); it++) {
-    std::vector<RationalPoint> aF = faces.at(it);
-    double area = areaPolygon(aF);
-    vecArea.push_back(area);
-  }
-  std::vector<size_t> sArea = sort_indexes(vecArea);
-  for(size_t it=0; it<sArea.size(); it++) {
-    std::vector<RationalPoint> aF = faces.at(sArea.at(it));
-    sFaces.push_back(aF);
-  }
-  return sFaces;
-}
-
-std::vector<size_t> sortAreaFaces(std::vector<double> vecArea)
-{
-  return sort_indexes(vecArea);
-}
-

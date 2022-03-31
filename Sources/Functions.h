@@ -22,6 +22,13 @@
 #include "DGtal/helpers/StdDefs.h"
 #include "DGtal/io/colormaps/HueShadeColorMap.h"
 
+#include "DGtal/helpers/StdDefs.h"
+#include "DGtal/io/readers/PGMReader.h"
+#include "DGtal/images/ImageSelector.h"
+
+#include "DGtal/io/colormaps/GradientColorMap.h"
+
+using namespace std;
 using namespace DGtal;
 
 #define SIZE 0.1
@@ -38,6 +45,8 @@ typedef std::tuple<Rational,Rational,Rational> Line;
 typedef std::tuple<int,int,int> PythagoreanTriple;
 
 std::ostream& operator<<(std::ostream& os, const RationalPoint p);
+
+RationalPoint getIntegerPoint(RationalPoint p);
 
 Line getLineFromPoints(RationalPoint p1, RationalPoint p2);
 double getRealValue(Rational rp);
@@ -100,7 +109,6 @@ bool isInsidePixel(DGtal::Z2i::Point px, RationalPoint p);
 //Returns area of a polygon given order vertices
 double areaPolygon(const std::vector<RationalPoint>& polygon);
 
-
 double fullAngle(std::pair<RationalPoint,RationalPoint> v1, std::pair<RationalPoint, RationalPoint> v2);
 double accuteAngle(std::pair<RationalPoint,RationalPoint> v1, std::pair<RationalPoint, RationalPoint> v2);
 
@@ -111,6 +119,14 @@ int getFirstFalse(std::vector<bool> vec);
 
 int findVertex(const std::vector<RationalPoint>& vector, RationalPoint v);
 int findVertex(const std::vector<Z2i::Point>& vector, Z2i::Point v);
+
+bool containEdge(const std::vector<RationalPoint>& face, RationalPoint e1, RationalPoint e2);
+bool containEdge(const std::vector<int>& face, std::pair<int,int> e);
+int findEdege(std::vector<std::pair<int, int> > edges, std::pair<int,int> e);
+
+std::vector<int> findContainEdge(const std::vector<std::vector<RationalPoint> >& face, RationalPoint e1, RationalPoint e2);
+std::vector<int> findContainEdge(const std::vector<std::vector<int> >& face, std::pair<int,int> e);
+
 bool containElement(const std::vector<int>& vector, int element);
 bool containElement(const std::vector<RationalPoint>& vector, RationalPoint element);
 bool containElement(const std::vector<Z2i::Point>& vector, Z2i::Point element);
@@ -127,51 +143,6 @@ std::pair<RationalPoint,RationalPoint> getBoundingBox(const std::vector<Rational
 std::pair<RationalPoint,RationalPoint> getBoundingBox(const std::vector<std::pair<RationalPoint,RationalPoint> >& points);
 std::pair<Z2i::Point,Z2i::Point> getBoundingBox(const std::vector<Z2i::Point>& points);
 std::pair<Z2i::RealPoint,Z2i::RealPoint> getBoundingBox(const std::vector<Z2i::RealPoint>& points);
-
-//Topology handling
-std::vector<Z2i::Point> getDigitalSetPoint(Z2i::DigitalSet shape_set);
-Z2i::DigitalSet getDigitalSet(std::vector<Z2i::Point> point_set);
-
-bool isSimplePoint(Z2i::DigitalSet shape_set, Z2i::Point point, int adjacency = 4); //Adjacency : objet connectivity
-bool isSimplePoint(std::vector<Z2i::Point> point_set, Z2i::Point point, int adjacency = 4);
-Z2i::DigitalSet getSimplifiedPoint(Z2i::DigitalSet shape_set, int adjacency = 4);
-std::vector<Z2i::Point> getSimplifiedPoint(std::vector<Z2i::Point> point_set, int adjacency = 4);
-//(Equiv Equation 17): remove at most the simple points
-Z2i::DigitalSet getSimplifiedPoint(Z2i::DigitalSet shape_set, std::vector<Z2i::Point> fixed_point, int adjacency = 4);
-//Equation 17: min (|X| - |Y|)
-Z2i::DigitalSet getMinimizePoint(Z2i::DigitalSet shape_set, std::vector<Z2i::Point> fixed_point, int adjacency = 4);
-//Equation 15: min ( |Xt \ Y|) + |Y \ Xt| )
-Z2i::DigitalSet getMinimizeDifference(Z2i::DigitalSet shape_set, std::vector<Z2i::Point> fixed_point, int adjacency = 4);
-//Equation 18: min ( distance (barycenter(Xt), barycenter(Y) )
-Z2i::DigitalSet getMinimizeDistance(Z2i::DigitalSet shape_set, std::vector<Z2i::Point> fixed_point, int adjacency = 4);
-//TODO: Equation 16: min ( area(|Xt \ Y|) + area(|Y \ Xt|) )
-Z2i::DigitalSet getMinimizeArea(Z2i::DigitalSet shape_set, std::vector<Z2i::Point> fixed_point, int adjacency = 4);
-
-//method = 0 => getSimplifiedPoint (=getMinimizePoint)
-//method = 1 => getMinimizePoint
-//method = 2 => getMinimizeDifference
-//method = 3 => getMinimizeDistance
-std::vector<Z2i::Point> getMinimizeDigitization(std::vector<Z2i::Point> point_set, std::vector<Z2i::Point> fixed_point, int adjacency = 4, int method=0);
-
-std::vector<Z2i::DigitalSet> getConnectedComponent(Z2i::DigitalSet shape_set, int adjacency = 4);
-std::vector<std::vector<Z2i::Point> > getConnectedComponent(std::vector<Z2i::Point> point_set, int adjacency = 4);
-std::vector<int> getIdConnectedComponent(std::vector<Z2i::Point> point_set, int adjacency = 4);
-
-int getBetii0(Z2i::DigitalSet shape_set, int adjacency = 4); //Connected component of objet
-int getBetii1(Z2i::DigitalSet shape_set, int adjacency = 8); //Hole = connected component of complement - 1
-int getEulerCharacteristic(Z2i::DigitalSet shape_set, int adjacency = 4);
-
-int getBetii0(std::vector<Z2i::Point> point_set, int adjacency = 4);
-int getBetii1(std::vector<Z2i::Point> point_set, int adjacency = 8);
-int getEulerCharacteristic(std::vector<Z2i::Point> point_set, int adjacency = 4);
-
-bool isHomotopopyEquivalence(Z2i::DigitalSet shape1, Z2i::DigitalSet shape2, int adjacency = 4);
-bool isHomotopopyEquivalence(std::vector<Z2i::Point> shape1, std::vector<Z2i::Point> shape2, int adjacency = 4);
-
-void writePoints(std::vector<Z2i::Point> pts, std::string filename);
-
-std::vector<std::vector<RationalPoint> > sortAreaFaces(std::vector<std::vector<RationalPoint> > faces);
-std::vector<size_t> sortAreaFaces(std::vector<double> vecArea);
 
 //#include "Functions.ih" // Includes inline functions.
 #endif // FUNCTIONS_H

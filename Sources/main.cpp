@@ -2,244 +2,163 @@
 #include "Complex.h"
 #include "AffineTransform.h"
 
-#include "DGtal/helpers/StdDefs.h"
-#include "DGtal/io/readers/PGMReader.h"
-#include "DGtal/images/ImageSelector.h"
+#include "CLI11.hpp"
 
-#include "DGtal/io/colormaps/GradientColorMap.h"
-
-using namespace std;
-using namespace DGtal;
-
-//Compute the set faces of CH1 belong (true) to CH2
-std::vector<bool>
-getBelongFace(const Complex& cH1, const Complex& cH2) {
-  std::vector<bool> isBelong(cH1.face.size(),false);
-  for(size_t it=0; it<cH1.face.size(); it++) {//for each face of cH1 (represented by its center)
-    RationalPoint p = cH1.getFaceCenter(it);
-    isBelong.at(it) = cH2.isInsideComplex(p);
-  }
-  return isBelong;
-}
+/************************************/
+/* Homotopic transform */
+/************************************/
+template <typename T>
+std::vector<size_t> sort_indexes_decrease(const std::vector<T> &v) {
   
-//Compute the set B2 of border faces of complex H
-std::vector<bool>
-getBorderFace(const Complex& cH) {
-  std::vector<bool> isBorder(cH.face.size(), false);
-  for(size_t it=0; it<cH.face.size(); it++) {//for each face h2
-    isBorder.at(it) = cH.isBorderFace(it);
+  // initialize original index locations
+  std::vector<size_t> idx(v.size());
+  iota(idx.begin(), idx.end(), 0);
+  
+  // sort indexes based on comparing values in v
+  // using std::stable_sort instead of std::sort
+  // to avoid unnecessary index re-orderings
+  // when v contains elements of equal values
+  stable_sort(idx.begin(), idx.end(), [&v](size_t i1, size_t i2) {return v[i1] > v[i2];});
+  return idx;
+}
+
+//Read image and return pixels in the image
+std::vector<Z2i::Point>
+readImage(std::string filename) {
+  std::vector<Z2i::Point> vecPtsTmp;
+  typedef ImageSelector<Z2i::Domain, unsigned char >::Type Image;
+  Image image = PGMReader<Image>::importPGM( filename );
+  for ( Z2i::Domain::ConstIterator it = image.domain().begin(); it != image.domain().end(); ++it )
+  {
+    unsigned char val =  image (*it);
+    if(val==255)
+      vecPtsTmp.push_back(*it);
   }
-  return isBorder;
-}
-
-std::vector<std::vector<int> > getNeigbourFace(const Complex& cH) {
-  std::vector<std::vector<int> > vN = cH.getAllNeighbourFace();
-  return vN;
-}
-
-std::vector<bool> getNeigbourFace(const Complex& gH, const std::vector<bool>& bordercH, const std::vector<bool>& iscH) {
-  std::vector<bool> vecBorder (gH.face.size(),false);
-  std::vector<std::vector<int> > vecNext;
-  std::vector<std::vector<int> > vecNint;
-  for(size_t it=0; it<bordercH.size(); it++) {
-    if(bordercH.at(it)) { //if interieur border
-      std::vector<int> vN = gH.getNeighbourFace(it);
-      std::vector<int> vNExt;
-      std::vector<int> vNInt;
-      for(size_t it_bis = 0; it_bis<vN.size(); it_bis++) {
-        if(!iscH.at(vN.at(it_bis))) //Not interieur neigbours
-          vNExt.push_back(vN.at(it_bis));
-        else
-          vNInt.push_back(vN.at(it_bis));
-      }
-      assert(vNExt.size()!=0);
-      vNExt.push_back(it);
-      vecNext.push_back(vNExt);
-      vecNint.push_back(vNInt);
-    }
+  //Center the points
+  Z2i::RealPoint cr = getBaryCenter(vecPtsTmp);
+  Z2i::Point p, c(round(cr[0]),round(cr[1]));
+  std::vector<Z2i::Point> vecPts;
+  for(auto it=vecPtsTmp.begin(); it!=vecPtsTmp.end(); it++) {
+    p = (*it) - c;
+    vecPts.push_back(p);
   }
-  //get all int / ext border faces
-  for(size_t it=0; it<vecNext.size(); it++)
-    for(size_t it_bis=0; it_bis<vecNext.at(it).size(); it_bis++) {
-      vecBorder.at(vecNext.at(it).at(it_bis)) = true;
-    }
-  return vecBorder;
+  return vecPts;
 }
 
-//Compute the set B2 of border faces of gridH is simple wrt complex H
+//Compute border faces of gridH is simple wrt complex H
 std::vector<bool>
-getBorderFace(const Complex& gridH, const Complex& cH) {
+getBorderFace(const Complex& gridH, const std::vector<bool>& cH) {
   std::vector<bool> isBorder(gridH.face.size(), false);
-  bool border = false;
-  int idF = -1;
-  for(size_t it=0; it<gridH.face.size(); it++) {
-    RationalPoint p = gridH.getFaceCenter(it);
-    border = false;
-    idF = cH.isInsideComplex(p); //a face of cH
-    if(idF != -1 && cH.isBorderFace(idF))//inside and and border (outside => not border by default)
-      border = true;
-    isBorder.at(it) = border;
+  for(size_t it=0; it<gridH.edge.size(); it++) {
+    std::pair<int, int> f = gridH.star_edge.at(it);
+    int f1 = f.first;
+    int f2 = f.second;
+    if(f1!=-1 && f2!=-1){ //must have 2 faces
+      bool idF1 = cH.at(f1); //is a face of cH
+      bool idF2 = cH.at(f2); //is a face of cH
+      if((idF1 && !idF2) || (!idF1 && idF2)) { //one face inside and one outside
+        isBorder.at(f1) = true;
+        isBorder.at(f2) = true;
+      }
+    }
   }
   return isBorder;
 }
-  
-//Compute sigma fct indicating a pixel (its center) is majority inside (true) / outside (false) of the target complex H
-bool
-sigma(const RationalPoint p, const Complex& cH) {
-  double a = 0.0;
-  DGtal::Z2i::Point px(int(getRealValue(p.first)),int(getRealValue(p.second)));
-  for(size_t it=0; it<cH.face.size(); it++) {
-    RationalPoint p = cH.getFaceCenter(it);
-    if(isInsidePixel(px, p))
-      a += cH.getFaceArea(it);
-  }
-  if(a>=0.5)
-    return true;
-  return false;
-}
 
-std::vector<bool>
-sigma(const Complex& gF, const Complex& cH) {
-  std::vector<double> area(gF.face.size(), 0.0);
-  for(size_t it=0; it<gF.face.size(); it++) {//for each face of gF, get all faceH inside it
-    area.at(it) = sigma(gF.getFaceCenter(it), cH);
-  }
-  std::vector<bool> majority(gF.face.size(), false);
-  for(size_t it=0; it<area.size(); it++) {
-    if(area.at(it)>=0.5)
-      majority.at(it) = true;
-  }
-  return majority;
-}
-
-//Compute zeta fct indicating fill area of pixel (its center) wrt to complexH
-//insideFaces contains the set of cH face inside a pixel of gridF
-double
-zeta(const RationalPoint p, const Complex& cH, vector<size_t>& idInFaces) {
-  DGtal::Z2i::Point px(int(getRealValue(p.first)),int(getRealValue(p.second)));
-  double a = 0.0;
-  for(size_t it=0; it<cH.face.size(); it++) {
-    RationalPoint p = cH.getFaceCenter(it);
-    if(isInsidePixel(px, p)) {
-      a += cH.getFaceArea(it);
-      idInFaces.push_back(it);
+//Compute tau fct indicating whether a face h2 of gridH is simple wrt complex H
+bool isSimpleFace(const Complex& gridH, const std::vector<bool>& cH, int idF) {
+  //Compute vetex border
+  int nbVertexBorder = 0;
+  std::vector<int> cell_vertex = gridH.cell_face_vertex.at(idF); //cell of faces (=set of vertices by id)
+  for(size_t it=0; it<cell_vertex.size(); it++) { //For each vertex of idF, verify if it is a border vertex
+    std::vector<int> star_vertex = gridH.star_vertex_face.at(cell_vertex.at(it)); // Get star_face of each vertex
+    int nbFace = 0; //compute nb of faces it belongs to
+    for(size_t it_bis=0; it_bis<star_vertex.size(); it_bis++) {
+      if(cH.at(star_vertex.at(it_bis)))
+        nbFace++;
     }
+    if (nbFace==1) //vertex is border if it belonsg to one face only
+      nbVertexBorder++;
   }
-  if(a>=0.5)
-    return a;
-  return 1-a;
-}
-
-std::vector<double>
-zeta(const Complex& gF, const Complex& cH, std::vector<vector<size_t> >& idInFaces) {
-  std::vector<double> area(gF.face.size(), 0.0);
-  double a = 0.0;
-  for(size_t it=0; it<gF.face.size(); it++) {//for each face of gF, get all faceH inside it
-    vector<size_t> inF;
-    a = zeta(gF.getFaceCenter(it), cH, inF);
-    idInFaces.push_back(inF);
-    area.at(it) = a;
-  }
-  return area;
-}
-
-//Compute zeta fct indicating fill area of pixel (its center) wrt to cHinit and cHcurrent
-double
-zeta(const RationalPoint p, const Complex& cHinit, const Complex& cHcurrent) {
-  DGtal::Z2i::Point px(int(getRealValue(p.first)),int(getRealValue(p.second)));
-  double a = 0.0;
-  for(size_t it=0; it<cHcurrent.face.size(); it++) {
-    RationalPoint p = cHcurrent.getFaceCenter(it);
-    if(isInsidePixel(px, p))
-      a += cHcurrent.getFaceArea(it);
-  }
-  bool sigmaValue = sigma(p, cHinit);
-  if(sigmaValue) //majority inside Hinit
-    return a;
-  return 1-a;
-}
-
-std::vector<double>
-zeta(const Complex& gF, const Complex& cHinit, const Complex& cHcurrent) {
-  std::vector<double> area(gF.face.size(), 0.0);
-  for(size_t it=0; it<gF.face.size(); it++) //for each face of gF, compute zeta wrt complex H
-    area.at(it) = zeta(gF.getFaceCenter(it), cHinit, cHcurrent);
-  return area;
-}
-
-//Compute iota fct indicating whether a face h2 (represented by its center) is belong to complex H
-bool
-iota (RationalPoint h2, const Complex& cH) {
-  bool isBelong = false;
-  for(size_t it=0; it<cH.face.size() && !isBelong; it++) {
-    if(isInsidePolygon(cH.getFaceVertices(it), h2))
-      isBelong = true;
-  }
-  return isBelong;
-}
-
-//Compute iota fct indicating whether a face h2 of gridH is belong to complex H
-std::vector<bool>
-iota (const Complex& gridH, const Complex& cH) {
-  std::vector<bool> isBelong(gridH.face.size(),false);
-  for(size_t it=0; it<gridH.face.size(); it++) //for each face h2 (represented by its center)
-    isBelong.at(it) = iota(gridH.getFaceCenter(it),cH);
-  return isBelong;
-}
-
-//For collapse operation: whether a cell is BG / FG
-std::vector<bool>
-setFaceState(const Complex& cH, const Complex& gridH) {
-  std::vector<bool> isBelong(gridH.face.size(),false);
-  bool belong = false;
-  size_t it_bis = 0;
-  //std::vector<RationalPoint> f;
-  //RationalPoint c;
-  for(size_t it=0; it<cH.face.size(); it++) {
-    belong = false;
-    //f = cH.getFaceVertices(it);
-    for(it_bis=0; it_bis<gridH.face.size() && !belong; it_bis++) {
-      if(cH.face.at(it).size() == gridH.face.at(it_bis).size()) { //same size
-        //c = gridH.getFaceCenter(it_bis);
-        if (isEqual(cH.getFaceCenter(it), gridH.getFaceCenter(it_bis))) { //(isInsidePolygon(f, c)) {
-          belong = true;
-          isBelong.at(it_bis) = belong;
-        }
+  //Compute edge border
+  int nbEdgeBorder = 0;
+  std::vector<int> cell_edge= gridH.cell_face_edge.at(idF); //cell of faces (=set of edges by id)
+  for(size_t it=0; it<cell_edge.size(); it++) { //For each edge of idF, verify if it is a border edge
+    std::pair<int,int> star_edge = gridH.star_edge.at(cell_edge.at(it)); // Get star of each edge
+    int f1 = star_edge.first;
+    int f2 = star_edge.second;
+    if(f1!=-1 && f2!=-1){ //must have 2 faces
+      bool idF1 = cH.at(f1); //is a face of cH
+      bool idF2 = cH.at(f2); //is a face of cH
+      if((idF1 && !idF2) || (!idF1 && idF2)) { //one face inside and one outside
+        nbEdgeBorder++;
       }
     }
-    assert(belong==true);
+    else //one face in, one face out
+      nbEdgeBorder++;
   }
-  return isBelong;
+  return (nbEdgeBorder-nbVertexBorder)==1;
 }
 
 //Compute tau fct indicating whether a face h2 of complex H is simple
 std::vector<bool>
-tau (const Complex& cH) {
-  std::vector<bool> isSimple(cH.face.size(), false);
-  for(size_t it=0; it<cH.face.size(); it++) {//for each face h2
-    isSimple.at(it) = cH.isSimpleFace(it);
-  }
-  return isSimple;
-}
-//Compute tau fct indicating whether a face h2 of gridH is simple wrt complex H
-std::vector<bool>
-tau (const Complex& gridH, const Complex& cH) {
+tau (const Complex& gridH, const std::vector<bool>& cH) {
   std::vector<bool> isSimple(gridH.face.size(), false);
+  std::vector<bool> borderH = getBorderFace(gridH, cH);
   bool simple = false;
-  int idF = -1;
   for(size_t it=0; it<gridH.face.size(); it++) {
-    RationalPoint p = gridH.getFaceCenter(it);
     simple = false;
-    idF = cH.isInsideComplex(p);
-    if(idF == -1)//outside => simple by default
-      simple = true;
-    else {
-      if(cH.isSimpleFace(idF)) //inside and simple
+    if(cH.at(it)==true) { //inside face
+      simple = isSimpleFace(gridH,cH,it); //verify the face simplicity
+    }
+    else { //outside face
+      if(borderH.at(it)) { //and a border face
+        std::vector<bool> cH_tmp = cH;
+        cH_tmp.at(it) = true;
+        simple = isSimpleFace(gridH,cH_tmp,it); //verify new face simplicity
+      }
+      else //simple by default
         simple = true;
     }
     isSimple.at(it) = simple;
   }
   return isSimple;
+}
+
+//Count number of complex H in the current grid
+int countNbFaceComplex(const std::vector<bool>& cH) {
+  int nbFace = 0;
+  for(size_t it=0; it<cH.size(); it++)
+    if(cH.at(it))
+      nbFace++;
+  return nbFace;
+}
+
+//Initialize the gauss solution
+std::vector<bool> initizeGauss(const Complex &gridH, const std::vector<bool>& cH) {
+  std::vector<Z2i::Point> vP;
+  RationalPoint p, pp;
+  Z2i::Point px;
+  for(size_t it=0; it<cH.size(); it++) {
+    if(cH.at(it)==true) { //a face of CH
+      p = gridH.getFaceCenter(it);
+      px = Z2i::Point(round(getRealValue(p.first)),round(getRealValue(p.second)));
+      pp = RationalPoint(px[0], px[1]);
+      if(!containElement(vP, px) && isInsidePolygon(gridH.getFaceVertices(it), pp))
+        vP.push_back(px);
+    }
+  }
+  //reproject into gH
+  std::vector<bool> Hinit (gridH.face.size(), false);
+  for(size_t it=0; it<vP.size(); it++) {
+    px = vP.at(it);
+    for(size_t it_bis=0; it_bis<gridH.face.size(); it_bis++) {
+      p = gridH.getFaceCenter(it_bis);
+      if(isInsidePixel(px, p))
+        Hinit.at(it_bis) = true;
+    }
+  }
+  return Hinit;
 }
 
 //Find index of face f2 of gF that h2 (represented by its center) belong to
@@ -252,83 +171,60 @@ getIdFace(RationalPoint h2, const Complex& gF) {
   return -1;
 }
 
-//Compute priority fct (epsilon) indicating the priority of processing h2 (represented by its center)
-double
-epsilon (RationalPoint h2, const Complex& cHinit, const Complex& cHcurrent, const Complex& gF) {
-  bool iotaValue = iota(h2, cHcurrent);
-  //find index of f2 that h2 belong to compute its sigma and zeta values
-  int idF = getIdFace(h2, gF);
-  assert(idF != -1);
-  RationalPoint cF = gF.getFaceCenter(idF);
-  bool sigmaValue = sigma(cF, cHcurrent);
-  double zetaV = zeta(cF, cHinit, cHcurrent);
-  double iotaV = iotaValue==true ? 1 : -1;
-  double sigmaV = sigmaValue==true ? 1 : -1;
-  return -iotaV*sigmaV*zetaV;
-}
-
-std::vector<double>
-epsilon (const Complex& cH, const Complex& cHinit, const Complex& cHcurrent, const Complex& gF) {
-  std::vector<double> priority;
-  double p;
-  for(size_t it=0; it<cH.face.size(); it++) {//compute de priority for all cell of complex H
-    p = epsilon(cH.getFaceCenter(it), cHinit, cHcurrent, gF);
-    priority.push_back(p);
-  }
-  return priority;
-}
-  
+//Find index of complex H face of max epsilon value
 size_t
 maxIndexEpsilon(const std::vector<double>& epsilonValue, const std::vector<bool>& isBorder) {
-  //int maxEpsilonIndex = std::max_element(epsilonValue.begin(),epsilonValue.end()) - epsilonValue.begin();
   assert(isBorder.size()==epsilonValue.size());
   double maxEpsilon = -1;
-  int maxIndex = -1;
-  
-  for(size_t it=0; it<isBorder.size(); it++) {
-    if(isBorder.at(it) && epsilonValue.at(it)>maxEpsilon) {//border cell
-        maxEpsilon = epsilonValue.at(it);
-        maxIndex = it;
-    }
+  std::vector<size_t> epsilonValueIndex = sort_indexes_decrease(epsilonValue);
+  int index = 0;
+  int maxIndex = epsilonValueIndex.at(index);//-1;
+  while (!isBorder.at(maxIndex)) {
+    index++;
+    maxIndex = epsilonValueIndex.at(index);
   }
   return maxIndex;
 }
 
-Complex initizeGauss(const Complex &cH, const Complex &gH) {
-  std::vector<Z2i::Point> vP;
-  RationalPoint p, pp;
-  Z2i::Point px;
-  for(size_t it=0; it<cH.face.size(); it++) {
-    p = cH.getFaceCenter(it);
-    px = Z2i::Point(round(getRealValue(p.first)),round(getRealValue(p.second)));
-    pp = RationalPoint(px[0], px[1]);
-    if(!containElement(vP, px) && isInsidePolygon(cH.getFaceVertices(it), pp))
-      vP.push_back(px);
+//Find a random index of complex H face
+size_t
+randomIndexEpsilon(const std::vector<bool>& isBorder, const std::vector<bool>& isSimple) {
+  int index = std::rand() % isBorder.size();
+  while(!isSimple.at(index) || !isBorder.at(index))
+    index = std::rand() % isBorder.size();
+  return index;
+}
+
+//Find a index of complex H face according to a stats function
+size_t
+statIndexEpsilon(const std::vector<double>& epsilonValue, const std::vector<bool>& isBorder, const std::vector<bool>& isSimple) {
+  double coefficient = 1000000.0;
+  std::vector<size_t> epsilonValueIndex = sort_indexes_decrease(epsilonValue);
+  double x = double(rand()) / double(RAND_MAX);
+  double p = log(1.0+coefficient*x)/log(coefficient + 1.0);//log(1.0+x)/log(2.0);
+  p = p*epsilonValue.size();
+  int indexStat = floor(p);
+  int index = epsilonValueIndex.at(indexStat);
+  while(!isSimple.at(index) || !isBorder.at(index)) {
+    x = static_cast <double> (rand()) / static_cast <double> (RAND_MAX);
+    p = log(1.0+coefficient*x)/log(coefficient + 1.0);//log(1.0+x)/log(2.0);
+    p = p*epsilonValue.size();
+    indexStat = floor(p);
+    index = epsilonValueIndex.at(indexStat);
   }
-  //reproject into gH
-  Complex Hinit;
-  Hinit.addGridLines(gH.vertical_lines, gH.horizontal_lines);
-  for(size_t it=0; it<vP.size(); it++) {
-    px = vP.at(it);
-    for(size_t it_bis=0; it_bis<gH.face.size(); it_bis++) {
-      p = gH.getFaceCenter(it_bis);
-      if(isInsidePixel(px, p))
-        Hinit.addFace(gH.getFaceVertices(it_bis), true, true);
-    }
-  }
-  return Hinit;
+  std::cout<<"statIndexEpsilon, p="<<p<<" and index="<<indexStat<<std::endl;
+  return index;
 }
 
 std::vector<Z2i::Point>
-testMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool saveFile = true) {
+homotopicAffineMajority(std::vector<Z2i::Point> X, AffineTransform t, string file, int border = 2, bool saveFile = false) {
   std::vector<Z2i::Point> Y;
   std::pair<Z2i::Point,Z2i::Point> bb = getBoundingBox(X);
-  string filename;
   
   //Grid F
   Complex gridF;
-  Z2i::Point p1 = bb.first - Z2i::Point(2,2);
-  Z2i::Point p2 = bb.second + Z2i::Point(2,2);
+  Z2i::Point p1 = bb.first - Z2i::Point(border,border);
+  Z2i::Point p2 = bb.second + Z2i::Point(border,border);
   gridF.initGrid(p1,p2);
   
   //GridG = t(GridF)
@@ -345,54 +241,54 @@ testMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool sav
     for(int it_bis=0; it_bis<h_faces.at(it).size(); it_bis++)
       h_cells.push_back(h_faces.at(it).at(it_bis));
   //Get cells of H completly embedded in tgridF
-  Complex tgridH(h_cells);
-  vector<vector<RationalPoint> > h_pure_cells; //all pure faces
-  vector<vector<size_t> > idInFace; //all pure faces
-  std::vector<double> zetaH = zeta(tgridF, tgridH, idInFace);
-  std::vector<bool> sigmaH = sigma(tgridF, tgridH);
-  assert(idInFace.size()==tgridF.face.size());
-  for(size_t it=0; it<zetaH.size(); it++)
-  if(fabs(zetaH.at(it)-1)<EPSILON && sigmaH.at(it)) {//pure and inside pixels
-    //h_pure_cells.push_back(tgridF.getFaceVertices(it));
-    for(size_t it_bis=0; it_bis<idInFace.at(it).size(); it_bis++) {
-      size_t idF = idInFace.at(it).at(it_bis);
-      h_pure_cells.push_back(tgridH.getFaceVertices(idF));
-    }
-  }
+  vector<RationalPoint> borderGridG;
+  borderGridG.push_back(gridG.vertical_lines.front().second);
+  borderGridG.push_back(gridG.vertical_lines.front().first);
+  borderGridG.push_back(gridG.vertical_lines.back().first);
+  borderGridG.push_back(gridG.vertical_lines.back().second);
+  borderGridG.push_back(gridG.vertical_lines.front().second);
+  vector<vector<RationalPoint> > borderGridG_cells;
+  borderGridG_cells.push_back(borderGridG);
+  Complex tgridG(borderGridG_cells);
+  
   //Embed into gridH
-  Complex gridH(h_pure_cells);//gridH(h_cells);
+  Complex gridH(h_cells);//gridH(h_pure_cells);//SIMPLIFIED
   gridH.initGridLines(tgridF.vertical_lines, tgridF.horizontal_lines);
   gridH.addGridLines(gridG.vertical_lines, gridG.horizontal_lines);
+  gridH.updateAllCell();
+  gridH.updateAllStar();
   
   Board2D aBoard;
+  string filename;
   if(saveFile) {
     gridH.drawGrid(aBoard);
     gridH.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/gridH.svg");
+    filename = file + "_gridH.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
-  Complex cX(X, adj);
+  Complex cX(X);
   cX.initGridLines(tgridF.vertical_lines, tgridF.horizontal_lines);
-  if(saveFile) {
-    cX.drawGrid(aBoard);
-    cX.drawPixel(aBoard);
-    aBoard.saveSVG("../Results/objetX.svg");
-    aBoard.clear();
-  }
+  cX.drawGrid(aBoard);
+  cX.drawPixel(aBoard);
+  filename = file + "_objetX.svg";
+  aBoard.saveSVG(filename.c_str());
+  aBoard.clear();
+  
   
   //ComplexF
   Complex complexF;
   complexF.init(tp1,tp2);
   for(int it=0; it<X.size(); it++) {
     complexF.addCubicalFace(X.at(it));
-    complexF.idConnectedComponent.push_back(cX.getFaceConnectedComponent(it));
   }
   
   if(saveFile) {
     complexF.drawGrid(aBoard);
     complexF.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/complexF.svg");
+    filename = file + "_complexF.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
@@ -401,68 +297,40 @@ testMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool sav
   if(saveFile) {
     complexG.drawGrid(aBoard);
     complexG.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/complexG.svg");
+    filename = file + "_complexG.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
     
     complexF.drawComplex(aBoard, Color::Red);
     complexG.drawComplex(aBoard, Color::Blue);
     complexF.drawGrid(aBoard);
     complexG.drawGrid(aBoard);
-    aBoard.saveSVG("../Results/complexFG.svg");
+    filename = file + "_complexFG.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
-  //Complex H :refine from gridF and gridG
-  //Decomposition of R(X) --given by ComplexG-- by GridF => output: cells
-  vector<vector<vector<RationalPoint> > > intersection_cells = intersectionFace(complexG, tgridF);
-  vector<vector<RationalPoint> > cells; //all faces
-  for(int it=0; it<intersection_cells.size(); it++)
-    for(int it_bis=0; it_bis<intersection_cells.at(it).size(); it_bis++)
-      cells.push_back(intersection_cells.at(it).at(it_bis));
-  
-  //Build the Complex H (decomposition of ComplexG(=t(ComplexF)) by GridF) from cells
-  Complex complexH(cells);
-  complexH.initGridLines(gridG.vertical_lines, gridG.horizontal_lines);
-  for(size_t it=0; it<complexH.face.size(); it++) {
-    vector<RationalPoint> f = complexH.getFaceVertices(it);
-    int idCC = complexG.getIndexConnectedComponent(f);
-    complexH.idConnectedComponent.push_back(idCC);
-  }
+  //Embed complex G into the grid H
+  std::vector<bool> belongVertex, belongEdge, belongFace;
+  embedComplexInGrid(complexG,gridH,belongFace);
   if(saveFile) {
     gridH.drawGrid(aBoard);
-    complexH.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/complexH.svg");
-    aBoard.saveSVG("../Results/complexMajorityH.svg");
-    aBoard.clear();
-  }
-  
-  //Line 1
-  Complex Hinit = complexH;
-  std::vector<bool> stateFaceHinit = setFaceState(Hinit, gridH);
-  int sum = 0;
-  for(size_t it = 0; it<stateFaceHinit.size(); it++)
-    if(stateFaceHinit.at(it))
-      sum++;
-  assert(sum==Hinit.face.size());
-  assert(stateFaceHinit.size()==gridH.face.size());
-  std::vector<bool> stateFaceHcurrent = stateFaceHinit;
-  if(saveFile) {
-    gridH.drawGrid(aBoard);
-    for(size_t it=0; it<gridH.face.size(); it++) {
-      if(stateFaceHinit.at(it))
-        gridH.drawFace(aBoard, it, DGtal::Color::Green);
-      else
-        gridH.drawFace(aBoard, it, DGtal::Color::Red);
+    for(size_t it=0; it<belongFace.size(); it++) {
+      if(belongFace.at(it)==true)
+        gridH.drawFace(aBoard, it, Color::Gray);
     }
-    aBoard.saveSVG("../Results/stageFaceMajority.svg");
+    filename = file + "_complexH.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
-  //Optimization of data structure
-  //Compute h2 area of Hinit (wrt Hgrid)
+  //Prepare Htarget structure
+  std::vector<bool> stateFaceHtarget = belongFace;
+  
+  //Compute h2 area of Htarget (wrt Hgrid)
   std::vector<double> areaFace(gridH.face.size(),0.0);
   for(size_t it=0; it<gridH.face.size(); it++) {
-    if(stateFaceHinit.at(it))
+    if(stateFaceHtarget.at(it))
       areaFace.at(it) = gridH.getFaceArea(it);
   }
   if(saveFile) {
@@ -471,10 +339,12 @@ testMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool sav
       if(areaFace.at(it)>0) //face of Hinit
         gridH.drawFace(aBoard, it, DGtal::Color::Green);
     }
-    aBoard.saveSVG("../Results/areaFaceMajority.svg");
+    filename = file + "_areaFaceMajority.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
-  //Compute fill area f2 of Hinit (wrt Hgrid)
+  
+  //Compute fill area f2 of Htarget (wrt Hgrid)
   std::vector<double> fillAreaFace(gridH.face.size(),0.0);
   std::vector<bool> fillAreaDone(gridH.face.size(),false);
   std::vector<std::vector<int> > Phi; //Phi (f2) = {h2}
@@ -487,7 +357,7 @@ testMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool sav
     std::vector<int> insideFaces;
     for(size_t it_bis=0; it_bis<gridH.face.size(); it_bis++) { //find all face h2 in the same pixel
       if(!fillAreaDone.at(it_bis) && isInsidePixel(px, gridH.getFaceCenter(it_bis))) {
-        if(stateFaceHinit.at(it_bis)) // a face of Hinit
+        if(stateFaceHtarget.at(it_bis)) // a face of Hinit
           a += gridH.getFaceArea(it_bis);
         phi.at(it_bis) = it;
         insideFaces.push_back(it_bis);
@@ -500,27 +370,26 @@ testMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool sav
     Phi.push_back(insideFaces);
   }
   assert(Phi.size()==tgridF.face.size());
-  sum = 0;
-  for(size_t it=0; it<Phi.size(); it++)
-    sum += Phi.at(it).size();
-  assert(sum==gridH.face.size());
+ 
   if(saveFile) {
     gridH.drawGrid(aBoard);
     for(size_t it=0; it<gridH.face.size(); it++) {
-      if(fillAreaFace.at(it)>0.5) //majority interieur
-        gridH.drawFace(aBoard, it, DGtal::Color::Green);
+      if(fillAreaFace.at(it)<EPSILON || fabs(fillAreaFace.at(it)-1)<EPSILON) //pure pixels
+        gridH.drawFace(aBoard, it, DGtal::Color::Red);
       else {
-        if(fillAreaFace.at(it)<EPSILON || fabs(fillAreaFace.at(it)-1)<EPSILON) //pure pixels
-          gridH.drawFace(aBoard, it, DGtal::Color::Red);
+        if(fillAreaFace.at(it)>0.5) //majority interieur
+          gridH.drawFace(aBoard, it, DGtal::Color::Green);
         else //majority exterieur
-            gridH.drawFace(aBoard, it, DGtal::Color::Blue);
+          gridH.drawFace(aBoard, it, DGtal::Color::Blue);
       }
     }
-    Hinit.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/fillAreaFaceMajority.svg");
+    filename = file + "_fillAreaFaceMajority.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
+  //Line 1
+  std::vector<bool> stateFaceHcurrent = stateFaceHtarget;
   //Line 2-4
   //Sigma fct on F2
   std::vector<bool> sigmaValue(tgridF.face.size(), false);
@@ -536,8 +405,8 @@ testMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool sav
       else
         tgridF.drawFace(aBoard, it, DGtal::Color::Red);
     }
-    Hinit.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/sigmaMajority.svg");
+    filename = file + "_sigmaMajority.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
@@ -548,7 +417,7 @@ testMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool sav
     s = sigmaValue.at(it) ? 1.0 : -1.0;
     z = (1 - s) / 2.0;
     if(Phi.at(it).size()!=0) //contains Hinit cell
-       z += s*fillAreaFace.at(Phi.at(it).front());
+      z += s*fillAreaFace.at(Phi.at(it).front());
     zetaValue.at(it) = z;
   }
   if(saveFile) {
@@ -563,8 +432,8 @@ testMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool sav
           assert(false);
       }
     }
-    complexH.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/zetaMajority.svg");
+    filename = file + "_zetaMajority.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
@@ -580,7 +449,8 @@ testMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool sav
       else
         gridH.drawFace(aBoard, it, DGtal::Color::Red);
     }
-    aBoard.saveSVG("../Results/iotaMajority.svg");
+    filename = file + "_iotaMajority.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
@@ -593,7 +463,7 @@ testMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool sav
     epsilonValue.at(it) = -s1*s2*zetaValue.at(phi.at(it));
   }
   if(saveFile) {
-    // Creating colormap.
+    // Creating colormap
     GradientColorMap<int> cmap_grad( 0, 10 );
     cmap_grad.addColor( Color( 255, 255, 0 ) ); //from Yellow
     cmap_grad.addColor( Color( 255, 0, 0 ) ); //to Red
@@ -610,13 +480,13 @@ testMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool sav
           gridH.drawFace(aBoard, it, DGtal::Color::Green);
       }
     }
-    //complexH.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/epsilonMajority.svg");
+    filename = file + "_epsilonMajority.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
   //Tau fct on h2
-  std::vector<bool> tauValue = tau(gridH, Hinit);
+  std::vector<bool> tauValue = tau(gridH, stateFaceHcurrent);
   assert(tauValue.size()==gridH.face.size());
   if(saveFile) {
     gridH.drawGrid(aBoard);
@@ -626,14 +496,13 @@ testMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool sav
       else
         gridH.drawFace(aBoard, it, DGtal::Color::Red);
     }
-    complexH.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/tauMajority.svg");
+    filename = file + "_tauMajority.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
   //Line 9: Compute B2 of Hcurrent (of same index as gridH)
-  std::vector<bool> borderH = getBorderFace(gridH, Hinit);
-  std::vector<bool> borderHcurrent = getNeigbourFace(gridH, borderH, iotaValue);
+  std::vector<bool> borderHcurrent = getBorderFace(gridH, stateFaceHcurrent);
   assert(borderHcurrent.size()==gridH.face.size());
   if(saveFile) {
     gridH.drawGrid(aBoard);
@@ -643,28 +512,8 @@ testMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool sav
       else
         gridH.drawFace(aBoard, it, DGtal::Color::Green);
     }
-    aBoard.saveSVG("../Results/borderFaceMajority.svg");
-    aBoard.clear();
-  }
-  //Update tau value of border faces
-  for(size_t it=0; it<borderHcurrent.size(); it++) {
-    if(borderHcurrent.at(it) && !iotaValue.at(it)) { //border face but not belong to Hcurrent
-      Complex tmp = Hinit;
-      tmp.addFace(gridH.getFaceVertices(it), true, true);
-      //Verify new face simplicity
-      tauValue.at(it) = tmp.isSimpleFace(tmp.face.size()-1);
-    }
-  }
-  if(saveFile) {
-    gridH.drawGrid(aBoard);
-    for(size_t it=0; it<gridH.face.size(); it++) {
-      if(tauValue.at(it))
-        gridH.drawFace(aBoard, it, DGtal::Color::Green);
-      else
-        gridH.drawFace(aBoard, it, DGtal::Color::Red);
-    }
-    Hinit.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/tauMajority2.svg");
+    filename = file + "_borderFaceMajority.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
@@ -674,143 +523,88 @@ testMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool sav
     gridH.drawGrid(aBoard);
     gridH.drawComplex(aBoard, DGtal::Color::Green);
     gridH.drawFace(aBoard, maxIndex, DGtal::Color::Red);
-    aBoard.saveSVG("../Results/maxEpsilonMajority.svg");
+    filename = file + "_maxEpsilonMajority.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
+  
   //Line 12-26: Loop
   int nbIter=0;
   double a, h2 = maxIndex, f2 = phi.at(h2);
   while(epsilonValue.at(h2)>=0) {
-    std::cout<<"Majority vote: nbIter="<<nbIter<<": h2="<<h2<<", f2="<<f2;
+    std::cout<<"nbIter="<<nbIter<<": h2="<<h2<<", f2="<<f2<<", prior="<<epsilonValue.at(h2);
     //Line 13
-    Complex Hcurrent;
-    //Hcurrent.initGridLines(gridH.vertical_lines, gridH.horizontal_lines);
-    Hcurrent.initGridLines(tgridF.vertical_lines, tgridF.horizontal_lines);
     std::vector<int> inFace = Phi.at(f2);
     a = fillAreaFace.at(h2);
-    if(tauValue.at(h2)) {//if simple cell
-      //Line 14-15: Update iota of h2
-      //std::cout<<"Before: iotaValue.at(h2)="<<iotaValue.at(h2)<<std::endl;
+    if(tauValue.at(h2)) {//Line 13: if simple cell
+      //Line 14
+      if(iotaValue.at(h2)) //remove face
+        stateFaceHcurrent.at(h2) = false;
+      else //add face
+        stateFaceHcurrent.at(h2) = true;
+      //Line 15: Update iota of h2
       iotaValue.at(h2) = !iotaValue.at(h2); //Inverse state face
-      //std::cout<<"After: iotaValue.at(h2)="<<iotaValue.at(h2)<<std::endl;
-      for(size_t it=0; it<iotaValue.size(); it++)
-        if(iotaValue.at(it))
-          Hcurrent.addFace(gridH.getFaceVertices(it), true, true);
-      std::cout<<", Hcurrent="<<Hcurrent.face.size()<<", cH="<<gridH.face.size()<<std::endl;
+      
+      std::cout<<", Hcurrent="<<countNbFaceComplex(stateFaceHcurrent)<<", cH="<<gridH.face.size()<<std::endl;
       if(saveFile) {
         gridH.drawGrid(aBoard);
         for(size_t it=0; it<gridH.face.size(); it++) {
           if(iotaValue.at(it))
-            gridH.drawFace(aBoard, it, DGtal::Color::Green);
+            gridH.drawFace(aBoard, it, DGtal::Color::Black);//Green
           else
-            gridH.drawFace(aBoard, it, DGtal::Color::Red);
+            gridH.drawFace(aBoard, it, DGtal::Color::White);//Red
         }
-        Hcurrent.drawComplex(aBoard, Color::Gray);
-        filename = "../Results/HcurrentMajority_s" + std::to_string(nbIter) + ".svg";
+        filename = file + "_HcurrentMajority_s" + std::to_string(nbIter) + ".svg";
         aBoard.saveSVG(filename.c_str());
         aBoard.clear();
       }
       
       //Line 16 => out of condition
-      //std::cout<<"Before: fillAreaFace.at(h2)="<<fillAreaFace.at(maxIndex)<<std::endl;
       if(iotaValue.at(h2))
         a += areaFace.at(h2);
       else
         a -= areaFace.at(h2);
       for(size_t it_bis=0; it_bis<inFace.size(); it_bis++) //update fill area for all inside faces
         fillAreaFace.at(inFace.at(it_bis)) = a;
-      //std::cout<<"After: fillAreaFace.at(h2)="<<fillAreaFace.at(maxIndex)<<std::endl;
       //Line 17-19
-      std::vector<bool> tauHcurrent = tau(gridH, Hcurrent);
+      std::vector<bool> tauHcurrent = tau(gridH, stateFaceHcurrent);
       for(size_t it=0; it<gridH.face.size(); it++)
         tauValue.at(it) = tauHcurrent.at(it);
-      //Line 19 ????
     }
     else { //Line 20-21
       sigmaValue.at(f2) = !sigmaValue.at(f2);
-      for(size_t it=0; it<iotaValue.size(); it++)
+      std::cout<<", Hcurrent="<<countNbFaceComplex(stateFaceHcurrent)<<", cH="<<gridH.face.size()<<std::endl;
+      //f2 non simple
+      gridH.drawGrid(aBoard);
+      for(size_t it=0; it<gridH.face.size(); it++) {
         if(iotaValue.at(it))
-          Hcurrent.addFace(gridH.getFaceVertices(it), true, true);
-      std::cout<<", Hcurrent="<<Hcurrent.face.size()<<", cH="<<gridH.face.size()<<std::endl;
-      if(saveFile) {
-        gridH.drawGrid(aBoard);
-        for(size_t it=0; it<gridH.face.size(); it++) {
-          if(iotaValue.at(it))
-            gridH.drawFace(aBoard, it, DGtal::Color::Green);
-          else
-            gridH.drawFace(aBoard, it, DGtal::Color::Red);
-        }
-        Hcurrent.drawComplex(aBoard, Color::Gray);
-        filename = "../Results/HcurrentGauss_s" + std::to_string(nbIter) + ".svg";
-        aBoard.saveSVG(filename.c_str());
-        aBoard.clear();
+          gridH.drawFace(aBoard, it, DGtal::Color::Black);//Green
+        else
+          gridH.drawFace(aBoard, it, DGtal::Color::White);//Red
       }
+      gridH.drawFace(aBoard, h2, DGtal::Color::Red);
+      filename = file + "_HcurrentMajority_s" + std::to_string(nbIter) + ".svg";
+      aBoard.saveSVG(filename.c_str());
+      aBoard.clear();
     }
+    
     //Line 16/22: Update zeta of f2
-    //std::cout<<"Before: zetaValue.at(f2)="<<zetaValue.at(f2)<<std::endl;
     s = sigmaValue.at(f2) ? 1 : -1;
     zetaValue.at(f2) = (1.0-s)/2.0 + s*a;
-    //std::cout<<"After: zetaValue.at(f2)="<<zetaValue.at(f2)<<std::endl;
     //Line 23-25
-    //std::vector<int> inFace = Phi.at(f2);
     s2 = sigmaValue.at(f2) ? 1 : -1;
     a = zetaValue.at(f2);
     for(size_t it_bis=0; it_bis<inFace.size(); it_bis++) {
-      //std::cout<<"Before: epsilonValue.at("<<inFace.at(it_bis)<<")="<<epsilonValue.at(inFace.at(it_bis))<<std::endl;
       s1 = iotaValue.at(inFace.at(it_bis)) ? 1 : -1;
       epsilonValue.at(inFace.at(it_bis)) = -s1*s2*a;
-      //std::cout<<"After: epsilonValue.at("<<inFace.at(it_bis)<<")="<<epsilonValue.at(inFace.at(it_bis))<<std::endl;
-      //Line 25 out of loop
     }
-    if(saveFile) {
-      gridH.drawGrid(aBoard);
-      for(size_t it=0; it<gridH.face.size(); it++) {
-        if(epsilonValue.at(it)>0) { //most priority and positif
-          gridH.drawFace(aBoard, it, DGtal::Color::Red);
-        }
-        else {//negative
-          if(fabs(epsilonValue.at(it)+1)<EPSILON) //pure pixels
-            gridH.drawFace(aBoard, it, DGtal::Color::Blue);
-          else //less priority and negative
-            gridH.drawFace(aBoard, it, DGtal::Color::Green);
-        }
-      }
-      Hcurrent.drawComplex(aBoard, Color::Gray);
-      filename = "../Results/epsilonMajority_s" + std::to_string(nbIter) + ".svg";
-      aBoard.saveSVG(filename.c_str());
-      aBoard.clear();
-    }
-    
     //Line 25: Update border faces
-    std::vector<bool> borderH = getBorderFace(gridH, Hcurrent);
-    std::vector<bool> borderHTmp = getNeigbourFace(gridH, borderH, iotaValue);
-    for(size_t it_bis=0; it_bis<borderHTmp.size(); it_bis++)
-      borderHcurrent.at(it_bis) = borderHTmp.at(it_bis);
-    
-    for(size_t it=0; it<borderHcurrent.size(); it++) {
-      if(borderHcurrent.at(it) && !iotaValue.at(it)) { //border face but not belong to Hcurrent
-        Complex tmp = Hcurrent;
-        tmp.addFace(gridH.getFaceVertices(it), true, true);
-        //Verify new face simplicity
-        tauValue.at(it) = tmp.isSimpleFace(tmp.face.size()-1);
-      }
-    }
-    if(saveFile) {
-      gridH.drawGrid(aBoard);
-      for(size_t it=0; it<gridH.face.size(); it++) {
-        if(tauValue.at(it))
-          gridH.drawFace(aBoard, it, DGtal::Color::Green);
-        else
-          gridH.drawFace(aBoard, it, DGtal::Color::Red);
-      }
-      Hcurrent.drawComplex(aBoard, Color::Gray);
-      filename = "../Results/tauGauss_s" + std::to_string(nbIter) + ".svg";
-      aBoard.saveSVG(filename.c_str());
-      aBoard.clear();
-    }
-    
+    borderHcurrent = getBorderFace(gridH, stateFaceHcurrent);
     //Line 26
     h2 = maxIndexEpsilon(epsilonValue, borderHcurrent);
+    //h2 = randomIndexEpsilon(borderHcurrent, tauValue);
+    //h2 = statIndexEpsilon(epsilonValue, borderHcurrent, tauValue);
+    //Line 26
     f2 = phi.at(h2);
     nbIter++;
   }
@@ -829,7 +623,8 @@ testMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool sav
         gridH.drawFace(aBoard, it, DGtal::Color::Red);
     }
     Hopt.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/HoptMajority.svg");
+    filename = file + "_HoptMajority.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   //Retreive integer points
@@ -843,29 +638,27 @@ testMajority(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool sav
         Y.push_back(px);
     }
   }
-  if(saveFile) {
-    Complex cY(Y, adj);
-    cY.initGridLines(tgridF.vertical_lines, tgridF.horizontal_lines);
-    if(saveFile) {
-      cY.drawGrid(aBoard);
-      cY.drawPixel(aBoard);
-      aBoard.saveSVG("../Results/objetYMajority.svg");
-      aBoard.clear();
-    }
-  }
+
+  Complex cY(Y);
+  cY.initGridLines(tgridF.vertical_lines, tgridF.horizontal_lines);
+  cY.drawGrid(aBoard);
+  cY.drawPixel(aBoard);
+  filename = file + "_objetYMajority.svg";
+  aBoard.saveSVG(filename.c_str());
+  aBoard.clear();
+  
   return Y;
 }
 
 std::vector<Z2i::Point>
-testGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool saveFile = true) {
+homotopicAffineGauss(std::vector<Z2i::Point> X, AffineTransform t, string file, int border = 2, bool saveFile = false) {
   std::vector<Z2i::Point> Y;
   std::pair<Z2i::Point,Z2i::Point> bb = getBoundingBox(X);
-  string filename;
   
   //Grid F
   Complex gridF;
-  Z2i::Point p1 = bb.first - Z2i::Point(2,2);
-  Z2i::Point p2 = bb.second + Z2i::Point(2,2);
+  Z2i::Point p1 = bb.first - Z2i::Point(border,border);
+  Z2i::Point p2 = bb.second + Z2i::Point(border,border);
   gridF.initGrid(p1,p2);
   
   //GridG = t(GridF)
@@ -882,54 +675,53 @@ testGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool saveFi
     for(int it_bis=0; it_bis<h_faces.at(it).size(); it_bis++)
       h_cells.push_back(h_faces.at(it).at(it_bis));
   //Get cells of H completly embedded in tgridF
-  Complex tgridH(h_cells);
-  vector<vector<RationalPoint> > h_pure_cells; //all pure faces
-  vector<vector<size_t> > idInFace; //all pure faces
-  std::vector<double> zetaH = zeta(tgridF, tgridH, idInFace);
-  std::vector<bool> sigmaH = sigma(tgridF, tgridH);
-  assert(idInFace.size()==tgridF.face.size());
-  for(size_t it=0; it<zetaH.size(); it++)
-  if(fabs(zetaH.at(it)-1)<EPSILON && sigmaH.at(it)) {//pure and inside pixels
-    //h_pure_cells.push_back(tgridF.getFaceVertices(it));
-    for(size_t it_bis=0; it_bis<idInFace.at(it).size(); it_bis++) {
-      size_t idF = idInFace.at(it).at(it_bis);
-      h_pure_cells.push_back(tgridH.getFaceVertices(idF));
-    }
-  }
+  vector<RationalPoint> borderGridG;
+  borderGridG.push_back(gridG.vertical_lines.front().second);
+  borderGridG.push_back(gridG.vertical_lines.front().first);
+  borderGridG.push_back(gridG.vertical_lines.back().first);
+  borderGridG.push_back(gridG.vertical_lines.back().second);
+  borderGridG.push_back(gridG.vertical_lines.front().second);
+  vector<vector<RationalPoint> > borderGridG_cells;
+  borderGridG_cells.push_back(borderGridG);
+  Complex tgridG(borderGridG_cells);
+  
   //Embed into gridH
-  Complex gridH(h_pure_cells);//gridH(h_cells);
+  Complex gridH(h_cells);//gridH(h_pure_cells); //SIMPLIFIED
   gridH.initGridLines(tgridF.vertical_lines, tgridF.horizontal_lines);
   gridH.addGridLines(gridG.vertical_lines, gridG.horizontal_lines);
+  gridH.updateAllCell();
+  gridH.updateAllStar();
   
   Board2D aBoard;
+  string filename;
   if(saveFile) {
     gridH.drawGrid(aBoard);
     gridH.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/gridH.svg");
+    filename = file + "_gridH.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
-  Complex cX(X, adj);
+  Complex cX(X);
   cX.initGridLines(tgridF.vertical_lines, tgridF.horizontal_lines);
-  if(saveFile) {
-    cX.drawGrid(aBoard);
-    cX.drawPixel(aBoard);
-    aBoard.saveSVG("../Results/objetX.svg");
-    aBoard.clear();
-  }
+  cX.drawGrid(aBoard);
+  cX.drawPixel(aBoard);
+  filename = file + "_objetX.svg";
+  aBoard.saveSVG(filename.c_str());
+  aBoard.clear();
   
   //ComplexF
   Complex complexF;
   complexF.init(tp1,tp2);
   for(int it=0; it<X.size(); it++) {
     complexF.addCubicalFace(X.at(it));
-    complexF.idConnectedComponent.push_back(cX.getFaceConnectedComponent(it));
   }
   
   if(saveFile) {
     complexF.drawGrid(aBoard);
     complexF.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/complexF.svg");
+    filename = file + "_complexF.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
@@ -938,77 +730,50 @@ testGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool saveFi
   if(saveFile) {
     complexG.drawGrid(aBoard);
     complexG.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/complexG.svg");
+    filename = file + "_complexG.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
     
     complexF.drawComplex(aBoard, Color::Red);
     complexG.drawComplex(aBoard, Color::Blue);
     complexF.drawGrid(aBoard);
     complexG.drawGrid(aBoard);
-    aBoard.saveSVG("../Results/complexFG.svg");
+    filename = file + "_complexFG.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
-  //Complex H :refine from gridF and gridG
-  //Decomposition of R(X) --given by ComplexG-- by GridF => output: cells
-  vector<vector<vector<RationalPoint> > > intersection_cells = intersectionFace(complexG, tgridF);
-  vector<vector<RationalPoint> > cells; //all faces
-  for(int it=0; it<intersection_cells.size(); it++)
-    for(int it_bis=0; it_bis<intersection_cells.at(it).size(); it_bis++)
-      cells.push_back(intersection_cells.at(it).at(it_bis));
-  
-  //Build the Complex H (decomposition of ComplexG(=t(ComplexF)) by GridF) from cells
-  Complex complexH(cells);
-  complexH.initGridLines(gridG.vertical_lines, gridG.horizontal_lines);
-  for(size_t it=0; it<complexH.face.size(); it++) {
-    vector<RationalPoint> f = complexH.getFaceVertices(it);
-    int idCC = complexG.getIndexConnectedComponent(f);
-    complexH.idConnectedComponent.push_back(idCC);
-  }
+  //Embed complex G into the grid H
+  std::vector<bool> belongVertex, belongEdge, belongFace;
+  embedComplexInGrid(complexG,gridH,belongFace);
   if(saveFile) {
     gridH.drawGrid(aBoard);
-    complexH.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/complexH.svg");
-    aBoard.clear();
-  }
-    
-  Complex complexGauss = initizeGauss(complexH, gridH);
-  if(saveFile) {
-    gridH.drawGrid(aBoard);
-    complexGauss.drawComplex(aBoard, Color::Gray);
-    complexH.drawComplex(aBoard, Color::Red);
-    aBoard.saveSVG("../Results/complexGaussH.svg");
-    aBoard.clear();
-  }
-  
-  //Line 1
-  Complex Hinit = complexH;
-  std::vector<bool> stateFaceHinit = setFaceState(Hinit, gridH);
-  int sum = 0;
-  for(size_t it = 0; it<stateFaceHinit.size(); it++)
-    if(stateFaceHinit.at(it))
-      sum++;
-  assert(sum==Hinit.face.size());
-  assert(stateFaceHinit.size()==gridH.face.size());
-  if(saveFile) {
-    gridH.drawGrid(aBoard);
-    for(size_t it=0; it<gridH.face.size(); it++) {
-      if(stateFaceHinit.at(it))
-        gridH.drawFace(aBoard, it, DGtal::Color::Green);
-      else
-        gridH.drawFace(aBoard, it, DGtal::Color::Red);
+    for(size_t it=0; it<belongFace.size(); it++) {
+      if(belongFace.at(it)==true)
+        gridH.drawFace(aBoard, it, Color::Gray);
     }
-    aBoard.saveSVG("../Results/stateFaceInitGauss.svg");
+    filename = file + "_complexH.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
-  Complex Htarget = complexGauss;
-  std::vector<bool> stateFaceHtarget = setFaceState(Htarget, gridH);
-  sum = 0;
+  //Prepare Htarget structure
+  std::vector<bool> stateFaceHtarget = initizeGauss(gridH, belongFace);
+  if(saveFile) {
+    gridH.drawGrid(aBoard);
+    for(size_t it=0; it<stateFaceHtarget.size(); it++) {
+      if(stateFaceHtarget.at(it)==true)
+        gridH.drawFace(aBoard, it, Color::Gray);
+    }
+    filename = file + "_HinitGauss.svg";
+    aBoard.saveSVG(filename.c_str());
+    aBoard.clear();
+  }
+  
+  int sum = 0;
   for(size_t it = 0; it<stateFaceHtarget.size(); it++)
     if(stateFaceHtarget.at(it))
       sum++;
-  assert(sum==Htarget.face.size());
   assert(stateFaceHtarget.size()==gridH.face.size());
   if(saveFile) {
     gridH.drawGrid(aBoard);
@@ -1018,74 +783,12 @@ testGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool saveFi
       else
         gridH.drawFace(aBoard, it, DGtal::Color::Red);
     }
-    aBoard.saveSVG("../Results/stateFaceTargetGauss.svg");
+    filename = file + "_stateFaceTargetGauss.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
-  //Optimization of data structure
-  //Compute h2 area of Hinit (wrt Hgrid)
-  std::vector<double> areaFace(gridH.face.size(),0.0);
-  for(size_t it=0; it<gridH.face.size(); it++) {
-    if(stateFaceHinit.at(it))
-      areaFace.at(it) = gridH.getFaceArea(it);
-  }
-  if(saveFile) {
-    gridH.drawGrid(aBoard);
-    for(size_t it=0; it<gridH.face.size(); it++) {
-      if(areaFace.at(it)>0) //face of Hinit
-        gridH.drawFace(aBoard, it, DGtal::Color::Green);
-    }
-    aBoard.saveSVG("../Results/areaFaceGauss.svg");
-    aBoard.clear();
-  }
-  //Compute fill area f2 of Hinit (wrt Hgrid)
-  std::vector<double> fillAreaHinitFace(gridH.face.size(),0.0);
-  std::vector<bool> fillAreaDone(gridH.face.size(),false);
-  std::vector<std::vector<int> > Phi; //Phi (f2) = {h2}
-  std::vector<int> phi (gridH.face.size(), -1); //phi (h2) = f2
-  std::pair<Z2i::Point,Z2i::Point> d = tgridF.domain;
-  for(size_t it=0; it<tgridF.face.size(); it++) { //for each pixel of gridF
-    RationalPoint p = tgridF.getFaceCenter(it);
-    Z2i::Point px = Z2i::Point(int(getRealValue(p.first)), int(getRealValue(p.second))); //pixel center
-    double a = 0;
-    std::vector<int> insideFaces;
-    for(size_t it_bis=0; it_bis<gridH.face.size(); it_bis++) { //find all face h2 in the same pixel
-      if(!fillAreaDone.at(it_bis) && isInsidePixel(px, gridH.getFaceCenter(it_bis))) {
-        if(stateFaceHinit.at(it_bis)) // a face of Hinit
-          a += gridH.getFaceArea(it_bis);
-        phi.at(it_bis) = it;
-        insideFaces.push_back(it_bis);
-      }
-      for(size_t it_bis=0; it_bis<insideFaces.size(); it_bis++) { //update area of all faces in the pixel
-        fillAreaHinitFace.at(insideFaces.at(it_bis)) = a;
-        fillAreaDone.at(insideFaces.at(it_bis)) = true;
-      }
-    }
-    Phi.push_back(insideFaces);
-  }
-  assert(Phi.size()==tgridF.face.size());
-  sum = 0;
-  for(size_t it=0; it<Phi.size(); it++)
-    sum += Phi.at(it).size();
-  assert(sum==gridH.face.size());
-  if(saveFile) {
-    gridH.drawGrid(aBoard);
-    for(size_t it=0; it<gridH.face.size(); it++) {
-      if(fillAreaHinitFace.at(it)>0.5) //majority interieur
-        gridH.drawFace(aBoard, it, DGtal::Color::Green);
-      else {
-        if(fillAreaHinitFace.at(it)<EPSILON || fabs(fillAreaHinitFace.at(it)-1)<EPSILON) //pure pixels
-          gridH.drawFace(aBoard, it, DGtal::Color::Red);
-        else //majority exterieur
-            gridH.drawFace(aBoard, it, DGtal::Color::Blue);
-      }
-    }
-    Hinit.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/fillAreaFaceHinitGauss.svg");
-    aBoard.clear();
-  }
-  
-  //Compute fill area f2 of Hinit (wrt Hgrid)
+  //Compute fill area f2 of Htarget (wrt Hgrid)
   std::vector<double> fillAreaHtargetFace(gridH.face.size(),0.0);
   std::vector<bool> fillAreaHtargetDone(gridH.face.size(),false);
   for(size_t it=0; it<tgridF.face.size(); it++) { //for each pixel of gridF
@@ -1108,17 +811,97 @@ testGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool saveFi
   if(saveFile) {
     gridH.drawGrid(aBoard);
     for(size_t it=0; it<gridH.face.size(); it++) {
-      if(fillAreaHtargetFace.at(it)>0.5) //majority interieur
-        gridH.drawFace(aBoard, it, DGtal::Color::Green);
+      if(fillAreaHtargetFace.at(it)<EPSILON || fabs(fillAreaHtargetFace.at(it)-1)<EPSILON) //pure pixels
+        gridH.drawFace(aBoard, it, DGtal::Color::Red);
       else {
-        if(fillAreaHtargetFace.at(it)<EPSILON || fabs(fillAreaHtargetFace.at(it)-1)<EPSILON) //pure pixels
-          gridH.drawFace(aBoard, it, DGtal::Color::Red);
+        if(fillAreaHtargetFace.at(it)>0.5) //majority interieur
+          gridH.drawFace(aBoard, it, DGtal::Color::Green);
         else //majority exterieur
           gridH.drawFace(aBoard, it, DGtal::Color::Blue);
       }
     }
-    Htarget.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/fillAreaFaceHtargetGauss.svg");
+    filename = file + "_fillAreaFaceHtargetGauss.svg";
+    aBoard.saveSVG(filename.c_str());
+    aBoard.clear();
+  }
+  
+  //Line 1
+  std::vector<bool> stateFaceHcurrent = belongFace;
+  sum = 0;
+  for(size_t it = 0; it<stateFaceHcurrent.size(); it++)
+    if(stateFaceHcurrent.at(it))
+      sum++;
+  assert(stateFaceHcurrent.size()==gridH.face.size());
+  if(saveFile) {
+    gridH.drawGrid(aBoard);
+    for(size_t it=0; it<gridH.face.size(); it++) {
+      if(stateFaceHcurrent.at(it))
+        gridH.drawFace(aBoard, it, DGtal::Color::Green);
+      else
+        gridH.drawFace(aBoard, it, DGtal::Color::Red);
+    }
+    filename = file + "_stageFaceGauss.svg";
+    aBoard.clear();
+  }
+  //Prepare Hcurrent structure
+  //Compute h2 area of Hinit (wrt Hgrid)
+  std::vector<double> areaFace(gridH.face.size(),0.0);
+  for(size_t it=0; it<gridH.face.size(); it++) {
+    if(stateFaceHcurrent.at(it))
+      areaFace.at(it) = gridH.getFaceArea(it);
+  }
+  if(saveFile) {
+    gridH.drawGrid(aBoard);
+    for(size_t it=0; it<gridH.face.size(); it++) {
+      if(areaFace.at(it)>0) //face of Hinit
+        gridH.drawFace(aBoard, it, DGtal::Color::Green);
+    }
+    filename = file + "_areaFaceGauss.svg";
+    aBoard.saveSVG(filename.c_str());
+    aBoard.clear();
+  }
+  
+  //Compute fill area f2 of Hinit (wrt Hgrid)
+  std::vector<double> fillAreaFace(gridH.face.size(),0.0);
+  std::vector<bool> fillAreaDone(gridH.face.size(),false);
+  std::vector<std::vector<int> > Phi; //Phi (f2) = {h2}
+  std::vector<int> phi (gridH.face.size(), -1); //phi (h2) = f2
+  std::pair<Z2i::Point,Z2i::Point> d = tgridF.domain;
+  for(size_t it=0; it<tgridF.face.size(); it++) { //for each pixel of gridF
+    RationalPoint p = tgridF.getFaceCenter(it);
+    Z2i::Point px = Z2i::Point(int(getRealValue(p.first)), int(getRealValue(p.second))); //pixel center
+    double a = 0;
+    std::vector<int> insideFaces;
+    for(size_t it_bis=0; it_bis<gridH.face.size(); it_bis++) { //find all face h2 in the same pixel
+      if(!fillAreaDone.at(it_bis) && isInsidePixel(px, gridH.getFaceCenter(it_bis))) {
+        if(stateFaceHcurrent.at(it_bis)) // a face of Hinit
+          a += gridH.getFaceArea(it_bis);
+        phi.at(it_bis) = it;
+        insideFaces.push_back(it_bis);
+      }
+      for(size_t it_bis=0; it_bis<insideFaces.size(); it_bis++) { //update area of all faces in the pixel
+        fillAreaFace.at(insideFaces.at(it_bis)) = a;
+        fillAreaDone.at(insideFaces.at(it_bis)) = true;
+      }
+    }
+    Phi.push_back(insideFaces);
+  }
+  assert(Phi.size()==tgridF.face.size());
+  
+  if(saveFile) {
+    gridH.drawGrid(aBoard);
+    for(size_t it=0; it<gridH.face.size(); it++) {
+      if(fillAreaFace.at(it)<EPSILON || fabs(fillAreaFace.at(it)-1)<EPSILON) //pure pixels
+        gridH.drawFace(aBoard, it, DGtal::Color::Red);
+      else {
+        if(fillAreaFace.at(it)>0.5) //majority interieur
+          gridH.drawFace(aBoard, it, DGtal::Color::Green);
+        else //majority exterieur
+          gridH.drawFace(aBoard, it, DGtal::Color::Blue);
+      }
+    }
+    filename = file + "_fillAreaFaceGauss.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
@@ -1126,7 +909,7 @@ testGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool saveFi
   //Sigma fct on F2
   std::vector<bool> sigmaValue(tgridF.face.size(), false);
   for(size_t it=0; it<tgridF.face.size(); it++) {
-    if(Phi.at(it).size()!=0 && fillAreaHtargetFace.at(Phi.at(it).front())>=0.5) //contains Hinit cell and in majority
+    if(Phi.at(it).size()!=0 && fillAreaFace.at(Phi.at(it).front())>=0.5) //contains Hinit cell and in majority
       sigmaValue.at(it) = true;
   }
   if(saveFile) {
@@ -1137,8 +920,8 @@ testGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool saveFi
       else
         tgridF.drawFace(aBoard, it, DGtal::Color::Red);
     }
-    Htarget.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/sigmaGauss.svg");
+    filename = file + "_sigmaGauss.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
@@ -1149,30 +932,29 @@ testGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool saveFi
     s = sigmaValue.at(it) ? 1.0 : -1.0;
     z = (1 - s) / 2.0;
     if(Phi.at(it).size()!=0) //contains Hinit cell
-       z += s*fillAreaHinitFace.at(Phi.at(it).front());
+      z += s*fillAreaFace.at(Phi.at(it).front());
     zetaValue.at(it) = z;
   }
   if(saveFile) {
     tgridF.drawGrid(aBoard);
     for(size_t it=0; it<tgridF.face.size(); it++) {
-      if(fabs(zetaValue.at(it)-1)<EPSILON || fabs(zetaValue.at(it))<EPSILON) //pure and (in)correct pixels
+      if(fabs(zetaValue.at(it)-1)<EPSILON) //pures pixels
         tgridF.drawFace(aBoard, it, DGtal::Color::Green);
       else { //non pures pixels
-        if(zetaValue.at(it)>=0.5) //majority fill area and correct
+        if(zetaValue.at(it)>=0.5) //majority fill area
           tgridF.drawFace(aBoard, it, DGtal::Color::Blue);
-        else //majority fill area and incorrect
-          tgridF.drawFace(aBoard, it, DGtal::Color::Red);
+        else
+          assert(false);
       }
     }
-    Hinit.drawComplex(aBoard, Color::Gray);
-    Htarget.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/zetaGauss.svg");
+    filename = file + "_zetaGauss.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
   //Line 5-8
   //Iota fct on h2
-  std::vector<bool> iotaValue = stateFaceHinit;
+  std::vector<bool> iotaValue = stateFaceHcurrent;
   assert(iotaValue.size()==gridH.face.size());
   if(saveFile) {
     gridH.drawGrid(aBoard);
@@ -1182,7 +964,8 @@ testGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool saveFi
       else
         gridH.drawFace(aBoard, it, DGtal::Color::Red);
     }
-    aBoard.saveSVG("../Results/iotaGauss.svg");
+    filename = file + "_iotaGauss.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
@@ -1195,7 +978,7 @@ testGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool saveFi
     epsilonValue.at(it) = -s1*s2*zetaValue.at(phi.at(it));
   }
   if(saveFile) {
-    // Creating colormap.
+    // Creating colormap
     GradientColorMap<int> cmap_grad( 0, 10 );
     cmap_grad.addColor( Color( 255, 255, 0 ) ); //from Yellow
     cmap_grad.addColor( Color( 255, 0, 0 ) ); //to Red
@@ -1212,14 +995,13 @@ testGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool saveFi
           gridH.drawFace(aBoard, it, DGtal::Color::Green);
       }
     }
-    Hinit.drawComplex(aBoard, Color::Gray);
-    Htarget.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/epsilonGauss.svg");
+    filename = file + "_epsilonGauss.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
   //Tau fct on h2
-  std::vector<bool> tauValue = tau(gridH, Hinit);
+  std::vector<bool> tauValue = tau(gridH, stateFaceHcurrent);
   assert(tauValue.size()==gridH.face.size());
   if(saveFile) {
     gridH.drawGrid(aBoard);
@@ -1229,14 +1011,13 @@ testGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool saveFi
       else
         gridH.drawFace(aBoard, it, DGtal::Color::Red);
     }
-    Hinit.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/tauGauss.svg");
+    filename = file + "_tauGauss.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
   //Line 9: Compute B2 of Hcurrent (of same index as gridH)
-  std::vector<bool> borderH = getBorderFace(gridH, Hinit);
-  std::vector<bool> borderHcurrent = getNeigbourFace(gridH, borderH, iotaValue);
+  std::vector<bool> borderHcurrent = getBorderFace(gridH, stateFaceHcurrent);
   assert(borderHcurrent.size()==gridH.face.size());
   if(saveFile) {
     gridH.drawGrid(aBoard);
@@ -1246,28 +1027,8 @@ testGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool saveFi
       else
         gridH.drawFace(aBoard, it, DGtal::Color::Green);
     }
-    aBoard.saveSVG("../Results/borderFaceGauss.svg");
-    aBoard.clear();
-  }
-  //Update tau value of border faces
-  for(size_t it=0; it<borderHcurrent.size(); it++) {
-    if(borderHcurrent.at(it) && !iotaValue.at(it)) { //border face but not belong to Hcurrent
-      Complex tmp = Hinit;
-      tmp.addFace(gridH.getFaceVertices(it), true, true);
-      //Verify new face simplicity
-      tauValue.at(it) = tmp.isSimpleFace(tmp.face.size()-1);
-    }
-  }
-  if(saveFile) {
-    gridH.drawGrid(aBoard);
-    for(size_t it=0; it<gridH.face.size(); it++) {
-      if(tauValue.at(it))
-        gridH.drawFace(aBoard, it, DGtal::Color::Green);
-      else
-        gridH.drawFace(aBoard, it, DGtal::Color::Red);
-    }
-    Hinit.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/tauGauss2.svg");
+    filename = file + "_borderFaceGauss.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   
@@ -1277,141 +1038,72 @@ testGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool saveFi
     gridH.drawGrid(aBoard);
     gridH.drawComplex(aBoard, DGtal::Color::Green);
     gridH.drawFace(aBoard, maxIndex, DGtal::Color::Red);
-    aBoard.saveSVG("../Results/maxEpsilonGauss.svg");
+    filename = file + "_maxEpsilonGauss.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
+  
   //Line 12-26: Loop
   int nbIter=0;
   double a, h2 = maxIndex, f2 = phi.at(h2);
   while(epsilonValue.at(h2)>=0) {
-    std::cout<<"Gauss digitization: nbIter="<<nbIter<<": h2="<<h2<<", f2="<<f2;
-    //Line 13
-    Complex Hcurrent;
-    //Hcurrent.initGridLines(gridH.vertical_lines, gridH.horizontal_lines);
-    Hcurrent.initGridLines(tgridF.vertical_lines, tgridF.horizontal_lines);
+    std::cout<<"nbIter="<<nbIter<<": h2="<<h2<<", f2="<<f2<<", prior="<<epsilonValue.at(h2);
     std::vector<int> inFace = Phi.at(f2);
-    a = fillAreaHinitFace.at(h2);
-    if(tauValue.at(h2)) {//if simple cell
-      //Line 14-15: Update iota of h2
-      //std::cout<<"Before: iotaValue.at(h2)="<<iotaValue.at(h2)<<std::endl;
+    if(tauValue.at(h2)) {//Line 13: if simple cell
+      //Line 14
+      if(iotaValue.at(h2)) //remove face
+        stateFaceHcurrent.at(h2) = false;
+      else //add face
+        stateFaceHcurrent.at(h2) = true;
+      //Line 15: Update iota of h2
       iotaValue.at(h2) = !iotaValue.at(h2); //Inverse state face
-      //std::cout<<"After: iotaValue.at(h2)="<<iotaValue.at(h2)<<std::endl;
-      for(size_t it=0; it<iotaValue.size(); it++)
-        if(iotaValue.at(it))
-          Hcurrent.addFace(gridH.getFaceVertices(it), true, true);
-      std::cout<<", Hcurrent="<<Hcurrent.face.size()<<", cH="<<gridH.face.size()<<std::endl;
+      
+      std::cout<<", Hcurrent="<<countNbFaceComplex(stateFaceHcurrent)<<", cH="<<gridH.face.size()<<std::endl;
       if(saveFile) {
         gridH.drawGrid(aBoard);
         for(size_t it=0; it<gridH.face.size(); it++) {
           if(iotaValue.at(it))
-            gridH.drawFace(aBoard, it, DGtal::Color::Green);
+            gridH.drawFace(aBoard, it, DGtal::Color::Black);//Green);
           else
-            gridH.drawFace(aBoard, it, DGtal::Color::Red);
+            gridH.drawFace(aBoard, it, DGtal::Color::White);//Red);
         }
-        Hcurrent.drawComplex(aBoard, Color::Gray);
-        filename = "../Results/HcurrentGauss_s" + std::to_string(nbIter) + ".svg";
+        filename = file + "_HcurrentGauss_s" + std::to_string(nbIter) + ".svg";
         aBoard.saveSVG(filename.c_str());
         aBoard.clear();
       }
       
       //Line 16 => out of condition
-      //std::cout<<"Before: fillAreaFace.at(h2)="<<fillAreaFace.at(maxIndex)<<std::endl;
+      a = fillAreaFace.at(h2);
       if(iotaValue.at(h2))
         a += areaFace.at(h2);
       else
         a -= areaFace.at(h2);
       for(size_t it_bis=0; it_bis<inFace.size(); it_bis++) //update fill area for all inside faces
-        fillAreaHinitFace.at(inFace.at(it_bis)) = a;
-      //std::cout<<"After: fillAreaFace.at(h2)="<<fillAreaFace.at(maxIndex)<<std::endl;
+        fillAreaFace.at(inFace.at(it_bis)) = a;
       //Line 17-19
-      std::vector<bool> tauHcurrent = tau(gridH, Hcurrent);
+      std::vector<bool> tauHcurrent = tau(gridH, stateFaceHcurrent);
       for(size_t it=0; it<gridH.face.size(); it++)
         tauValue.at(it) = tauHcurrent.at(it);
-      //Line 19 ????
     }
     else { //Line 20-21
       sigmaValue.at(f2) = !sigmaValue.at(f2);
-      for(size_t it=0; it<iotaValue.size(); it++)
-        if(iotaValue.at(it))
-          Hcurrent.addFace(gridH.getFaceVertices(it), true, true);
-      std::cout<<", Hcurrent="<<Hcurrent.face.size()<<", cH="<<gridH.face.size()<<std::endl;
-      if(saveFile) {
-        gridH.drawGrid(aBoard);
-        for(size_t it=0; it<gridH.face.size(); it++) {
-          if(iotaValue.at(it))
-            gridH.drawFace(aBoard, it, DGtal::Color::Green);
-          else
-            gridH.drawFace(aBoard, it, DGtal::Color::Red);
-        }
-        Hcurrent.drawComplex(aBoard, Color::Gray);
-        filename = "../Results/HcurrentGauss_s" + std::to_string(nbIter) + ".svg";
-        aBoard.saveSVG(filename.c_str());
-        aBoard.clear();
-      }
+      std::cout<<", Hcurrent="<<countNbFaceComplex(stateFaceHcurrent)<<", cH="<<gridH.face.size()<<std::endl;
     }
     //Line 16/22: Update zeta of f2
-    //std::cout<<"Before: zetaValue.at(f2)="<<zetaValue.at(f2)<<std::endl;
     s = sigmaValue.at(f2) ? 1 : -1;
     zetaValue.at(f2) = (1.0-s)/2.0 + s*a;
-    //std::cout<<"After: zetaValue.at(f2)="<<zetaValue.at(f2)<<std::endl;
     //Line 23-25
     //std::vector<int> inFace = Phi.at(f2);
     s2 = sigmaValue.at(f2) ? 1 : -1;
     a = zetaValue.at(f2);
     for(size_t it_bis=0; it_bis<inFace.size(); it_bis++) {
-      //std::cout<<"Before: epsilonValue.at("<<inFace.at(it_bis)<<")="<<epsilonValue.at(inFace.at(it_bis))<<std::endl;
       s1 = iotaValue.at(inFace.at(it_bis)) ? 1 : -1;
       epsilonValue.at(inFace.at(it_bis)) = -s1*s2*a;
-      //std::cout<<"After: epsilonValue.at("<<inFace.at(it_bis)<<")="<<epsilonValue.at(inFace.at(it_bis))<<std::endl;
       //Line 25 out of loop
-    }
-    if(saveFile) {
-      gridH.drawGrid(aBoard);
-      for(size_t it=0; it<gridH.face.size(); it++) {
-        if(epsilonValue.at(it)>0) { //most priority and positif
-          gridH.drawFace(aBoard, it, DGtal::Color::Red);
-        }
-        else {//negative
-          if(fabs(epsilonValue.at(it)+1)<EPSILON) //pure pixels
-            gridH.drawFace(aBoard, it, DGtal::Color::Blue);
-          else //less priority and negative
-            gridH.drawFace(aBoard, it, DGtal::Color::Green);
-        }
-      }
-      Hcurrent.drawComplex(aBoard, Color::Gray);
-      filename = "../Results/epsilonGauss_s" + std::to_string(nbIter) + ".svg";
-      aBoard.saveSVG(filename.c_str());
-      aBoard.clear();
     }
     
     //Line 25: Update border faces
-    std::vector<bool> borderH = getBorderFace(gridH, Hcurrent);
-    std::vector<bool> borderHTmp = getNeigbourFace(gridH, borderH, iotaValue);
-    for(size_t it_bis=0; it_bis<borderHTmp.size(); it_bis++)
-      borderHcurrent.at(it_bis) = borderHTmp.at(it_bis);
-    
-    for(size_t it=0; it<borderHcurrent.size(); it++) {
-      if(borderHcurrent.at(it) && !iotaValue.at(it)) { //border face but not belong to Hcurrent
-        Complex tmp = Hcurrent;
-        tmp.addFace(gridH.getFaceVertices(it), true, true);
-        //Verify new face simplicity
-        tauValue.at(it) = tmp.isSimpleFace(tmp.face.size()-1);
-      }
-    }
-    if(saveFile) {
-      gridH.drawGrid(aBoard);
-      for(size_t it=0; it<gridH.face.size(); it++) {
-        if(tauValue.at(it))
-          gridH.drawFace(aBoard, it, DGtal::Color::Green);
-        else
-          gridH.drawFace(aBoard, it, DGtal::Color::Red);
-      }
-      Hcurrent.drawComplex(aBoard, Color::Gray);
-      filename = "../Results/tauGauss_s" + std::to_string(nbIter) + ".svg";
-      aBoard.saveSVG(filename.c_str());
-      aBoard.clear();
-    }
-    
+    borderHcurrent = getBorderFace(gridH, stateFaceHcurrent);
     //Line 26
     h2 = maxIndexEpsilon(epsilonValue, borderHcurrent);
     f2 = phi.at(h2);
@@ -1427,12 +1119,17 @@ testGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool saveFi
     gridH.drawGrid(aBoard);
     for(size_t it=0; it<gridH.face.size(); it++) {
       if(iotaValue.at(it))
-        gridH.drawFace(aBoard, it, DGtal::Color::Green);
+        gridH.drawFace(aBoard, it, DGtal::Color::Black);//Green
       else
-        gridH.drawFace(aBoard, it, DGtal::Color::Red);
+        gridH.drawFace(aBoard, it, DGtal::Color::White);//Red
     }
+    filename = file + "_HcurrentMajority_s" + std::to_string(nbIter) + ".svg";
+    aBoard.saveSVG(filename.c_str());
+    aBoard.clear();
+    
     Hopt.drawComplex(aBoard, Color::Gray);
-    aBoard.saveSVG("../Results/HoptGauss.svg");
+    filename = file + "_HoptGauss.svg";
+    aBoard.saveSVG(filename.c_str());
     aBoard.clear();
   }
   //Retreive integer points
@@ -1446,37 +1143,73 @@ testGauss(std::vector<Z2i::Point> X, AffineTransform t, int adj = 8, bool saveFi
         Y.push_back(px);
     }
   }
-  if(saveFile) {
-    Complex cY(Y, adj);
-    cY.initGridLines(tgridF.vertical_lines, tgridF.horizontal_lines);
-    if(saveFile) {
-      cY.drawGrid(aBoard);
-      cY.drawPixel(aBoard);
-      aBoard.saveSVG("../Results/objetYGauss.svg");
-      aBoard.clear();
-    }
-  }
+
+  Complex cY(Y);
+  cY.initGridLines(tgridF.vertical_lines, tgridF.horizontal_lines);
+  cY.drawGrid(aBoard);
+  cY.drawPixel(aBoard);
+  filename = file + "_objetYGauss.svg";
+  aBoard.saveSVG(filename.c_str());
+  aBoard.clear();
+  
   return Y;
 }
 
-int main()
-{
-  std::vector<Z2i::Point> X;
+int main(int argc, char**argv) {
   
-  X.push_back(Z2i::Point(0,0));
-  X.push_back(Z2i::Point(0,1));
-  X.push_back(Z2i::Point(1,1));
+  // parse command line using CLI ----------------------------------------------
+  CLI::App app;
+  std::string inputFile = "../Samples/ball_r3.pgm";
+  string outputDir = "./";
+  int model {0}; //0 : majority vote and 1 : gauss
+  bool saveFile {false}; //save intermediate files
+  //affine paramters
+  double a11 {1.0};
+  double a12 {0.0};
+  double a21 {0.0};
+  double a22 {1.0};
+  double tx {0.0};
+  double ty {0.0};
   
-  //multiple connected components
-  X.push_back(Z2i::Point(-2,-2));
-  X.push_back(Z2i::Point(-2,-1));
-  X.push_back(Z2i::Point(-2,0));
-
+  app.description("Apply homotopic affine transforma on a given image.\n Example:\n \t HomotopicAffineTransform --input <PgmFileName> --outputDir <OutputDir> -s --a11 1.5 --a12 0.2 --a21 0.5 --a22 1.2 --tx 0 --ty 0 -m <0|1>\n");
+  app.add_option("-i,--input,1",inputFile,"Input file.")->required()->check(CLI::ExistingFile);
+  app.add_option("-o,--output",outputDir,"Output directory (default ./).");
+  app.add_option("-m,--model",model,"Transformation model: Majority vote (0, default), Gauss (1).");
+  auto saveF = app.add_flag("-s,--save",saveFile,"Save all steps (defaut no).");
+  if(saveF->count() > 0)
+    saveFile = true;
+  app.add_option("--a11",a11,"affine transform parameter (default 1.0)",true);
+  app.add_option("--a12",a12,"affine transform parameter (default 0.0)",true);
+  app.add_option("--a21",a21,"affine transform parameter (default 0.0)",true);
+  app.add_option("--a22",a22,"affine transform parameter (default 1.0)",true);
+  app.add_option("--tx",tx,"X component of translation vector (default 0.0)",true);
+  app.add_option("--ty",ty,"Y component of translation vector (default 0.0)",true);
+  
+  app.get_formatter()->column_width(40);
+  CLI11_PARSE(app, argc, argv);
+  // END parse command line using CLI ----------------------------------------------
+  
+  int border = 2;
+  
+  std::string extenstion = inputFile.substr(inputFile.find_last_of(".")+1);
+  if(extenstion != "pgm") {
+    std::cout<<"Error: input image must be in pgm format !"<<std::endl;
+    exit(-1);
+  }
+  string filename = inputFile.substr(inputFile.find_last_of("/")+1);
+  filename = filename.substr(0, filename.find_last_of("."));
+  string outputFile = outputDir + "/" + filename;
+  
+  std::vector<Z2i::Point> X = readImage(inputFile);
   assert(X.size()!=0);
-
-  AffineTransform t1(1.1,0.4,0.3,1.5,1,2,0,1);
-  testMajority(X,t1);
-  AffineTransform t2(1.1,0.4,0.3,1.2,1,2,0,1);
-  testGauss(X,t1);
+  std::cout<<"X.size="<<X.size()<<std::endl;
+  
+  AffineTransform t(a11,a12,a21,a22,tx,ty);
+  
+  if(model==1)
+    homotopicAffineGauss(X, t, outputFile, border, saveFile);
+  else
+    homotopicAffineMajority(X, t, outputFile, border, saveFile);
+  
   return 1;
 }

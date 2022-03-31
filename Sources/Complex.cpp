@@ -1,7 +1,6 @@
 #include "Complex.h"
 #include "Graph.hpp"
 
-
 //Get edges of a face being (non) boundary wrt object's cells
 bool isSameEdge(std::pair<int,int> edge1, std::pair<int,int> edge2)
 {
@@ -59,9 +58,15 @@ Complex::Complex(const Complex & c)
   this->edge.push_back(c.edge.at(it));
   for(int it=0; it<c.face.size(); it++)
   this->face.push_back(c.face.at(it));
-  //Connected component
-  for(int it=0; it<c.idConnectedComponent.size(); it++)
-    this->idConnectedComponent.push_back(c.idConnectedComponent.at(it));
+  //Cell and star operator
+  this->cell_vertex = c.cell_vertex;
+  this->cell_edge = c.cell_edge;
+  this->cell_face_vertex = c.cell_face_vertex;
+  this->cell_face_edge = c.cell_face_edge;
+  this->star_vertex_edge = c.star_vertex_edge;
+  this->star_vertex_face = c.star_vertex_face;
+  this->star_edge = c.star_edge;
+  this->star_face = c.star_face;
 }
 
 Complex::Complex(const std::vector<std::vector<RationalPoint> >& faces)
@@ -80,25 +85,21 @@ Complex::Complex(const std::vector<std::vector<RationalPoint> >& faces)
         miny=faces.at(it).at(it_bis).second;
       if(maxy<faces.at(it).at(it_bis).second)
         maxy=faces.at(it).at(it_bis).second;
-      //std::cout<<"minx="<<minx<<", miny="<<miny<<" and maxx="<<maxx<<", maxy="<<maxy<<std::endl;
     }
   }
   Z2i::Point p1 = Z2i::Point(floor(getRealValue(minx)-0.5)-BORDER,floor(getRealValue(miny)-0.5)-BORDER);
   Z2i::Point p2 = Z2i::Point(ceil(getRealValue(maxx)+0.5)+BORDER,ceil(getRealValue(maxy)+0.5)+BORDER);
-  //std::cout<<p1<<p2<<std::endl;
   std::pair<Z2i::Point,Z2i::Point> d = std::make_pair(p1,p2);
   this->domain = d;
 }
 
-Complex::Complex(const std::vector<Z2i::Point>& points, int adjacency)
+Complex::Complex(const std::vector<Z2i::Point>& points)
 {
   if(points.size()!=0) {
-    std::vector<int> idCC = getIdConnectedComponent(points, adjacency);
     Z2i::Point p1, p2;
     int minx=points.front()[0], maxx=points.front()[0], miny=points.front()[1], maxy=points.front()[1];
     for(int it=0; it<points.size(); it++) {
       this->addCubicalFace(points.at(it));
-      this->idConnectedComponent.push_back(idCC.at(it));
       if(minx>points.at(it)[0])
         minx=points.at(it)[0];
       if(maxx<points.at(it)[0])
@@ -158,14 +159,12 @@ void Complex::init(Z2i::Point p1, Z2i::Point p2)
   //Line l;
   std::pair<RationalPoint,RationalPoint> l;
   //Horizontal lines : y = k + 1/2 =>  0x + y - (k+1/2) = 0
-  ///std::cout<<"Horizontal lines"<<std::endl;
   for(int y=p1[1]-1; y<=p2[1]; y++) {
     //l = std::make_tuple(Rational(1),Rational(0),-Rational(y)-half);
     pp1 = RationalPoint(Rational(p1[0])-half,Rational(y)+half);
     pp2 = RationalPoint(Rational(p2[0])+half,Rational(y)+half);
     l = std::make_pair(pp1, pp2);
     horizontal_lines.push_back(l);
-    ///std::cout<<pp1<<" and "<<pp2<<std::endl;
   }
   //Vertical lines : x = k + 1/2 =>  x + 0y - (k+1/2) = 0
   ///std::cout<<"Vertical lines"<<std::endl;
@@ -175,7 +174,6 @@ void Complex::init(Z2i::Point p1, Z2i::Point p2)
     pp2 = RationalPoint(Rational(x)+half,Rational(p2[1])+half);
     l = std::make_pair(pp1, pp2);
     vertical_lines.push_back(l);
-    ///std::cout<<pp1<<" and "<<pp2<<std::endl;
   }
 }
 
@@ -294,30 +292,166 @@ int Complex::getBorderSize() const
   return std::max(w,h);
 }
 
-void Complex::addVertex(RationalPoint v)
+int Complex::computeCellVertex (int idV)
+{
+  if(idV < vertex.size() && containElement(vertex, idV))
+    return idV;
+  return -1;
+}
+
+std::pair<int,int> Complex::computeCellEdge (int idE)
+{
+  std::pair<int,int> vertices (-1, -1);
+  if(idE < edge.size()) {
+    std::pair<int,int> e = edge.at(idE);
+    int e1 = computeCellVertex(e.first);
+    int e2 = computeCellVertex(e.second);
+    vertices.first = e1;
+    vertices.second = e2;
+    if(e1==-1 && e2!=-1)
+      vertices.first = e2;
+  }
+  return vertices;
+}
+
+std::vector<int> Complex::computeCellFaceVertex (int idF)
+{
+  std::vector<int> vertices;
+  if(idF < face.size()) {
+    std::vector<int> aFace = face.at(idF);
+    for(int it=0; it<aFace.size()-1; it++) {
+      int id = computeCellVertex(aFace.at(it));
+      if(id!=-1)
+        vertices.push_back(id);
+    }
+  }
+  return vertices;
+}
+
+std::vector<int> Complex::computeCellFaceEdge (int idF)
+{
+  std::vector<int> edges;
+  if(idF < face.size()) {
+    std::vector<int> aFace = face.at(idF);
+    for(int it=0; it<aFace.size()-1; it++) {
+      std::pair<int, int> e = std::make_pair(aFace.at(it), aFace.at(it+1));
+      int id = findEdege(this->edge, e);
+      if(id!=-1)
+        edges.push_back(id);
+    }
+  }
+  return edges;
+}
+
+std::vector<int> Complex::computeStarVertexEdge (int idV)
+{
+  std::vector<int> edges;
+  for(size_t it=0; it<edge.size(); it++) {
+    if(edge.at(it).first==idV || edge.at(it).second==idV)
+      edges.push_back(it);
+  }
+  return edges;
+}
+
+std::vector<int> Complex::computeStarVertexFace (int idV)
+{
+  std::vector<int> faces;
+  for(size_t it=0; it<face.size(); it++) {
+    if(containElement(face.at(it), idV))
+      faces.push_back(it);
+  }
+  return faces;
+}
+
+std::pair<int, int> Complex::computeStarEdge (int idE)
+{
+  std::vector<int> f = findContainEdge(face, edge.at(idE));
+  assert(f.size()<3);
+  std::pair<int, int> faces (-1, -1);
+  if(f.size()==2) {
+    faces.first = f.front();
+    faces.second = f.back();
+  }
+  if(f.size()==1) {
+    faces.first = f.front();
+    faces.second = -1;
+  }
+  return faces;
+}
+
+int Complex::computeStarFace (int idF)
+{
+  return idF;
+}
+
+void Complex::updateAllCell()
+{
+  for(size_t it=0; it<vertex.size(); it++)
+    cell_vertex.at(it) = computeCellVertex(it);
+  for(size_t it=0; it<edge.size(); it++)
+    cell_edge.at(it) = computeCellEdge(it);
+  for(size_t it=0; it<face.size(); it++) {
+    cell_face_vertex.at(it) = computeCellFaceVertex(it);
+    cell_face_edge.at(it) = computeCellFaceEdge(it);
+  }
+}
+void Complex::updateAllStar()
+{
+  for(size_t it=0; it<vertex.size(); it++) {
+    star_vertex_edge.at(it) = computeStarVertexEdge(it);
+    star_vertex_face.at(it) = computeStarVertexFace(it);
+  }
+  for(size_t it=0; it<edge.size(); it++)
+    star_edge.at(it) = computeStarEdge(it);
+  for(size_t it=0; it<face.size(); it++)
+    star_face.at(it) = computeStarFace(it);
+}
+
+
+void Complex::addVertex(RationalPoint v, bool updateCellStar)
 {
   int id = findVertex(list_vertex, v);
-  if(id==-1) {
+  if(id==-1) { //the vertex is new
     list_vertex.push_back(v);
     id = list_vertex.size()-1;
     vertex.push_back(id);
+    cell_vertex.push_back(id); //cell of vertex is itself
+    star_vertex_edge.push_back(std::vector<int>());//empty vector
+    star_vertex_face.push_back(std::vector<int>());//empty vector
   }
-  else
-    if(!containElement(vertex,id))
-      vertex.push_back(id);
+  if(!containElement(vertex,id)) { //the vertex is not in the list yet
+    vertex.push_back(id);
+    cell_vertex.push_back(id); //cell of vertex is itself
+    star_vertex_edge.push_back(std::vector<int>());//empty vector
+    star_vertex_face.push_back(std::vector<int>());//empty vector
+  }
+  //Compute the cell and star operator
+  if(updateCellStar) {
+    for(size_t id=0; id<vertex.size(); id++) {
+      cell_vertex.at(id) = computeCellVertex(id);
+      star_vertex_edge.at(id) = computeStarVertexEdge(id);
+      star_vertex_face.at(id) = computeStarVertexFace(id);
+    }
+  }
+  assert(vertex.size()==cell_vertex.size());
+  assert(vertex.size()==star_vertex_edge.size());
+  assert(vertex.size()==star_vertex_face.size());
 }
 
-bool isExistEdge(const std::vector<std::pair<int,int> >& vector, std::pair<int,int> e)
+int isExistEdge(const std::vector<std::pair<int,int> >& vector, std::pair<int,int> e)
 {
   std::pair<int,int> e_inv = std::make_pair(e.second, e.first);
   auto it = std::find(vector.begin(), vector.end(), e);
   auto it_inv = std::find(vector.begin(), vector.end(), e_inv);
-  if (it != vector.end() || it_inv != vector.end())
-    return true;
-  return false;
+  if (it != vector.end())
+    return it-vector.begin();
+ if(it_inv != vector.end())
+   return it_inv-vector.begin();
+  return -1;
 }
 
-void Complex::addEdge(RationalPoint e1, RationalPoint e2, bool addVertex)
+
+void Complex::addEdge(RationalPoint e1, RationalPoint e2, bool addVertex, bool updateCellStar)
 {
   int id1 = findVertex(list_vertex, e1);
   int id2 = findVertex(list_vertex, e2);
@@ -331,20 +465,31 @@ void Complex::addEdge(RationalPoint e1, RationalPoint e2, bool addVertex)
   }
   assert(id1!=id2);
   std::pair<int, int> e = std::make_pair(id1, id2);
-  if(!isExistEdge(edge,e)) {
+  int id = isExistEdge(edge,e);
+  if(id==-1) { //the edge is new
     edge.push_back(e);
+    id = edge.size() - 1;
+    cell_edge.push_back(std::make_pair(-1,-1)); //empty
+    star_edge.push_back(std::make_pair(-1,-1)); //empty
     if(addVertex) {
-      vertex.push_back(id1);
-      vertex.push_back(id2);
+      this->addVertex(e1);//vertex.push_back(id1);
+      this->addVertex(e2);//vertex.push_back(id2);
+    }
+  }
+  //Compute the cell and star operator
+  if(updateCellStar) {
+    for(size_t id=0; id<edge.size(); id++) {
+      cell_edge.at(id) = computeCellEdge(id);
+      star_edge.at(id) = computeStarEdge(id);
     }
   }
 }
 
-void Complex::addEdge(std::pair<RationalPoint, RationalPoint> e, bool addVertex)
+void Complex::addEdge(std::pair<RationalPoint, RationalPoint> e, bool addVertex, bool updateCellStar)
 {
   RationalPoint e1 = e.first;
   RationalPoint e2 = e.second;
-  this->addEdge(e1, e2, addVertex);
+  this->addEdge(e1, e2, addVertex, updateCellStar);
 }
 
 bool isExistFace(const std::vector<std::vector<int> >& vector, std::vector<int> f)
@@ -355,7 +500,7 @@ bool isExistFace(const std::vector<std::vector<int> >& vector, std::vector<int> 
   return false;
 }
 
-void Complex::addFace(const std::vector<RationalPoint>& f, bool addEdge, bool addVertex)
+void Complex::addFace(const std::vector<RationalPoint>& f, bool addEdge, bool addVertex, bool updateCellStar)
 {
   std::vector<int> aFace;
   for(int it=0; it<f.size(); it++) {
@@ -373,8 +518,10 @@ void Complex::addFace(const std::vector<RationalPoint>& f, bool addEdge, bool ad
     aFace.push_back(aFace.front());
   
   //Verify if the face is not in the list yet
-  if(!isExistFace(face,aFace)) {
+  int id = -1;
+  if(!isExistFace(face,aFace)) { //this is a new face
     face.push_back(aFace);
+    id = face.size() - 1;
     if(addVertex) {
       for(int it=0; it<aFace.size(); it++)
       this->addVertex(list_vertex.at(aFace.at(it)));
@@ -386,7 +533,22 @@ void Complex::addFace(const std::vector<RationalPoint>& f, bool addEdge, bool ad
         this->addEdge( e1, e2);
       }
     }
+    cell_face_vertex.push_back(std::vector<int>());//empty
+    cell_face_edge.push_back(std::vector<int>());//empty
+    star_face.push_back(-1);//empty
   }
+
+  //Compute the cell and star operator
+  if(updateCellStar) {
+    for(size_t id=0; id<face.size(); id++) {
+      cell_face_vertex.at(id) = computeCellFaceVertex(id);
+      cell_face_edge.at(id) = computeCellFaceEdge(id);
+      star_face.at(id) = computeStarFace(id);
+    }
+  }
+  assert(face.size()==cell_face_vertex.size());
+  assert(face.size()==cell_face_edge.size());
+  assert(face.size()==star_face.size());
 }
 
 //Add a face by its center
@@ -456,7 +618,7 @@ std::vector<RationalPoint> Complex::getFaceVertices(int index) const
   std::vector<int> f = this->face.at(index);
   std::vector<RationalPoint> face;
   for(int it=0; it<f.size(); it++)
-  face.push_back(this->list_vertex.at(f.at(it)));
+    face.push_back(this->list_vertex.at(f.at(it)));
   return face;
 }
 
@@ -486,32 +648,6 @@ int Complex::getIdFace(RationalPoint p)
   for(size_t it=0; it<this->face.size(); it++)
     if(isInsidePolygon(this->getFaceVertices(it), p))
       return it;
-  return -1;
-}
-
-int Complex::getFaceConnectedComponent(int index) const
-{
-  if(this->idConnectedComponent.size()>0)
-    return this->idConnectedComponent.at(index);
-  return -1;
-}
-
-std::vector<int> Complex::getFaceConnectedComponent() const
-{
-  return this->idConnectedComponent;
-}
-
-int Complex::getIndexConnectedComponent(const std::vector<RationalPoint>& face) const
-{
-  //get face center
-  RationalPoint c = getFaceCenter(face);
-  //find which face, c belonging to
-  for(size_t it=0; it<this->face.size(); it++) {
-    std::vector<RationalPoint> f = this->getFaceVertices(it);
-    bool res = isInsidePolygon(f, c);
-    if(res==true)
-      return this->idConnectedComponent.at(it); //id of CC of face (it)
-  }
   return -1;
 }
 
@@ -788,8 +924,7 @@ std::vector<std::vector<RationalPoint> > intersectionFace(const std::vector<Rati
   //Get all vertices and edges of a face
   std::vector<RationalPoint> vertex = intersectionVertex(face, grid);
   std::vector<std::pair<RationalPoint,RationalPoint> > edge = intersectionEdge(face, grid);
-  if(saveFile)
-  {
+  if(saveFile) {
     Board2D aBoard;
     grid.drawGrid(aBoard);
     //Draw face
@@ -962,11 +1097,12 @@ bool onEdgeFace(const std::vector<RationalPoint>& face, RationalPoint p1, Ration
 
 std::vector<std::vector<std::vector<RationalPoint> > > intersectionFace(const Complex& c, const Complex& grid)
 {
+  //Get faces of the complex c
   std::vector<std::vector<RationalPoint> > vecFace;
   for(int it=0; it<c.face.size(); it++) {
     std::vector<RationalPoint> face;
     for(int it_bis=0; it_bis<c.face.at(it).size(); it_bis++)
-    face.push_back(c.list_vertex.at(c.face.at(it).at(it_bis)));
+      face.push_back(c.list_vertex.at(c.face.at(it).at(it_bis)));
     vecFace.push_back(face);
   }
   //Compute edges for each face
@@ -978,200 +1114,26 @@ std::vector<std::vector<std::vector<RationalPoint> > > intersectionFace(const Co
   return vecCell;
 }
 
-int Complex::mappingGridIndex(int id_face, const Complex& grid)
+void embedComplexInGrid(const Complex& c, const Complex& grid, std::vector<bool>& belongFace)
 {
-  RationalPoint c = this->getFaceCenter(id_face);
-  //NOTE: center c of a face is never on an edge but inside a face
-  //for each face of the grid, find the face that contains the center c
-  std::vector<std::vector<int> > face = grid.face;
-  int count = 0;
-  int id = -1;
-  for(int it=0; it<face.size(); it++) { //for each face
-    std::vector<RationalPoint> face_vertex;
-    for(int it_bis=0; it_bis<face.at(it).size(); it_bis++) //find all vertices of the face
-    face_vertex.push_back(grid.list_vertex.at(face.at(it).at(it_bis)));
-    if(isInsidePolygon(face_vertex, c)) { //find the face that c is interior
-      id = it;
-      count++;
-    }
-  }
-  assert(count==1 || count==0); //the maping is unique !
-  return id;
-}
-
-std::vector<RationalPoint> Complex::mappingGrid(int id_face, const Complex& grid)
-{
-  int id = this->mappingGridIndex(id_face, grid);
-  assert(id!=-1); //the mapping exists
-  return grid.getFaceVertices(id);
-}
-
-std::vector<int> Complex::mappingGridIndex(const Complex& grid)
-{
-  std::vector<int> vecId;
-  for(int it=0; it<this->face.size(); it++) { //mapping all faces
-    int id = this->mappingGridIndex(it, grid);
-    if(!containElement(vecId,id))
-      vecId.push_back(id);
-  }
-  return vecId;
-}
-
-std::vector<std::vector<RationalPoint> > Complex::mappingGrid(const Complex& grid)
-{
+  for(int it=0; it<grid.face.size(); it++)
+    belongFace.push_back(false);
+  
+  //Get faces of the complex c
   std::vector<std::vector<RationalPoint> > vecFace;
-  for(int it=0; it<this->face.size(); it++) { //mapping all faces
-    std::vector<RationalPoint> face = this->mappingGrid(it, grid);
+  for(int it=0; it<c.face.size(); it++) {
+    std::vector<RationalPoint> face;
+    for(int it_bis=0; it_bis<c.face.at(it).size(); it_bis++)
+      face.push_back(c.list_vertex.at(c.face.at(it).at(it_bis)));
     vecFace.push_back(face);
   }
-  return vecFace;
-}
-
-std::vector<std::vector<RationalPoint> > Complex::mappingGridArea(const Complex& grid, double area)
-{
-  std::vector<std::vector<RationalPoint> > vecFace;
-  for(int it=0; it<this->face.size(); it++) { //mapping all faces
-    double a = areaPolygon(this->getFaceVertices(it));
-    if(a>area) {
-      std::vector<RationalPoint> face = this->mappingGrid(it, grid);
-      vecFace.push_back(face);
-    }
-  }
-  return vecFace;
-}
-
-/*
- std::vector<RationalPoint> mappingGrid(const std::vector<RationalPoint>& face, const Complex& grid)
- {
- Z2i::RealPoint c = getFaceCenter(face);
- RationalPoint rc = RationalPoint(Rational(c[0]),Rational(c[1]));
- //NOTE: center c of a face is never on an edge but inside a face
- //for each face of the grid, find the face that contains the center rc
- std::vector<std::vector<int> > aface = grid.face;
- int count = 0;
- int id = -1;
- for(int it=0; it<face.size(); it++) { //for each face
- std::vector<RationalPoint> face_vertex;
- for(int it_bis=0; it_bis<aface.at(it).size(); it_bis++) //find all vertices of the face
- face_vertex.push_back(grid.list_vertex.at(aface.at(it).at(it_bis)));
- if(isInsidePolygon(face_vertex, rc)) { //find the face that c is interior
- count++;
- id = it;
- }
- }
- assert(count==1 || count==0);
- std::vector<RationalPoint> face_id;
- for(int it=0; it<aface.at(id).size(); it++) //find all vertices of the face
- face_id.push_back(grid.list_vertex.at(aface.at(id).at(it)));
- return face_id;
- }
- */
-std::vector<int> Complex::inverseMappingIndex(const std::vector<RationalPoint>& face)
-{
-  std::vector<int> idFace;
-  std::vector<RationalPoint> centers = this->getFaceCenter();
-  //find the centers that belong to the face
-  for(int it=0; it<centers.size(); it++)
-  if(isInsidePolygon(face, centers.at(it)))
-    idFace.push_back(it);
-  return idFace;
-}
-
-std::vector<std::vector<RationalPoint> > Complex::inverseMapping(const std::vector<RationalPoint>& face)
-{
-  std::vector<int> idFaces = this->inverseMappingIndex(face);
-  return this->getFaceVertices(idFaces);
-}
-
-std::vector<int> Complex::inverseMappingIndex(const Complex& grid, int id_face)
-{
-  std::vector<int> idFace;
-  std::vector<RationalPoint> centers = this->getFaceCenter();
-  std::vector<RationalPoint> face = grid.getFaceVertices(id_face);
-  return inverseMappingIndex(face);
-}
-
-std::vector<std::vector<RationalPoint> > Complex::inverseMapping(const Complex& grid, int id_face)
-{
-  std::vector<int> idFaces = this->inverseMappingIndex(grid,id_face);
-  return this->getFaceVertices(idFaces);
-}
-
-std::vector<std::vector<int> > Complex::inverseMappingIndex(const std::vector<std::vector<RationalPoint> >& face)
-{
-  std::vector<std::vector<int> > vecIdFace;
-  for(int it=0; it<this->face.size(); it++) {
-    std::vector<int> idFace = this->inverseMappingIndex(face.at(it));
-    vecIdFace.push_back(idFace);
-  }
-  return vecIdFace;
-}
-
-std::vector<std::vector<std::vector<RationalPoint> > > Complex::inverseMapping(const std::vector<std::vector<RationalPoint> >& face)
-{
-  std::vector<std::vector<std::vector<RationalPoint> > > vecFace;
-  std::vector<std::vector<int> > idFaces = this->inverseMappingIndex(face);
-  for(int it=0; it<idFaces.size(); it++) {
-    std::vector<std::vector<RationalPoint> > f = this->getFaceVertices(idFaces.at(it));
-    vecFace.push_back(f);
-  }
-  return vecFace;
-}
-
-std::vector<std::vector<int> > Complex::inverseMappingIndex(const Complex& grid, bool allFace)
-{
-  std::vector<std::vector<int> > vecIdFace;
+  //Verify if any face of the grid belong to the complex C
   for(int it=0; it<grid.face.size(); it++) {
-    std::vector<int> idFace = this->inverseMappingIndex(grid,it);
-    if(!allFace) { //save only faces (f2/g2) of grid that contain at least one face (h2) of complexH
-      if(idFace.size()!=0)
-        vecIdFace.push_back(idFace);
-    }
-    else { //save all
-      vecIdFace.push_back(idFace);
-    }
+    RationalPoint p = grid.getFaceCenter(it);
+    int res = c.isInsideComplex(p);
+    if(res != -1)
+      belongFace.at(it) = true;
   }
-  return vecIdFace;
-}
-
-std::vector<std::vector<std::vector<RationalPoint> > > Complex::inverseMapping(const Complex& grid, bool allFace)
-{
-  std::vector<std::vector<std::vector<RationalPoint> > > vecFace;
-  std::vector<std::vector<int> > idFaces = this->inverseMappingIndex(grid,allFace);
-  for(int it=0; it<idFaces.size(); it++) {
-    std::vector<std::vector<RationalPoint> > f = this->getFaceVertices(idFaces.at(it));
-    vecFace.push_back(f);
-  }
-  return vecFace;
-}
-
-Complex Complex::getSortAreaFaces()
-{
-  std::vector<std::vector<RationalPoint> > faces = this->getFaceVertices();
-  std::vector<std::vector<RationalPoint> > sorted_faces = sortAreaFaces(faces);
-  return  Complex(sorted_faces);
-}
-
-Complex Complex::getSortAreaFaces(Complex& complexRef)
-{
-  double area=0;
-  std::vector<double> vecArea;
-  for(size_t it=0; it<this->face.size(); it++) { //each face get all cells in its complex references
-    std::vector<RationalPoint> f = this->getFaceVertices(it);
-    std::vector<std::vector<RationalPoint> > ff = complexRef.inverseMapping(f);
-    area = 0;
-    for(size_t it_bis=0; it_bis<ff.size(); it_bis++)
-    area += areaPolygon(ff.at(it_bis));
-    vecArea.push_back(area);
-  }
-  std::vector<size_t> sArea = sortAreaFaces(vecArea);
-  std::vector<std::vector<RationalPoint> > sorted_faces;
-  //for(size_t it=0; it<sArea.size(); it++) { //increasing
-  for(int it=sArea.size()-1; it>=0; it--) { //decreasing
-    std::vector<RationalPoint> aF = this->getFaceVertices(sArea.at(it));
-    sorted_faces.push_back(aF);
-  }
-  return  Complex(sorted_faces);
 }
 
 std::vector<std::pair<int,int> > Complex::getBoundaryEdges(int id_face) const
@@ -1280,7 +1242,6 @@ bool Complex::isSimpleFace(const std::vector<RationalPoint>& face) const
     return isSimpleFace(tmp.face.size()-1);
   else
     assert(false); //TODO return the simplicity of the face
-  return false;
 }
 
 bool Complex::isBorderVertex(int id_vertex) const
@@ -1310,178 +1271,6 @@ int Complex::isInsideComplex(RationalPoint p) const
       return it;
   }
   return -1;
-}
-
-std::vector<Z2i::Point> Complex::gaussianDigitization(const Complex& grid)
-{
-  std::vector<Z2i::Point> vecP;
-  std::vector<RationalPoint> gridCenter = grid.getFaceCenter();
-  for(int it=0; it<gridCenter.size(); it++) {
-    RationalPoint c=gridCenter.at(it);
-    bool belong = false;
-    //For each face of the complex, check if grid center c belong to it
-    int it_bis=0;
-    while(!belong && it_bis<this->face.size()) {
-      std::vector<RationalPoint> face = this->getFaceVertices(it_bis);
-      //if(distance(getBaryCenter(face),c)<sqrt(2) && isInsidePolygon(face,c)) {//if(isInterieurPolygon(face,c))
-      if(isInsidePolygon(face,c)) {//if(isInterieurPolygon(face,c))
-        vecP.push_back(Z2i::Point(round(getRealValue(c.first)),round(getRealValue(c.second))));
-        belong=true;
-      }
-      it_bis++;
-    }
-  }
-  return vecP;
-}
-/*
- std::vector<Z2i::Point> Complex::majorityVoteDigitization(const Complex& grid)
- {
- std::vector<Z2i::Point> vecP;
- std::vector<RationalPoint> gridCenter = grid.getFaceCenter();
- for(int it=0; it<gridCenter.size(); it++) {
- RationalPoint c=gridCenter.at(it);
- bool belong = false;
- //For each face of the complex, find d(fc,c)<1/2
- int it_bis=0;
- while(!belong && it_bis<this->face.size()) {
- RationalPoint fc=this->getFaceCenter(it_bis);
- if(distance(fc,c)<0.5) {
- vecP.push_back(Z2i::Point(round(getRealValue(c.first)),round(getRealValue(c.second))));
- belong=true;
- }
- it_bis++;
- }
- }
- return vecP;
- }
- */
-
-std::vector<Z2i::Point> Complex::majorityVoteDigitization(const Complex& grid)
-{
-  std::vector<Z2i::Point> vecP;
-  std::vector<RationalPoint> gridCenter = grid.getFaceCenter();
-  for(int it=0; it<gridCenter.size(); it++) {
-    RationalPoint c=gridCenter.at(it);
-    double area = 0;
-    bool belong=false;
-    int it_bis=0;
-    while(!belong && it_bis<this->face.size()) {
-      RationalPoint fc=this->getFaceCenter(it_bis);
-      if(distance(fc,c)<0.51) {
-        area += areaPolygon(this->getFaceVertices(it_bis));
-      }
-      if(area>=0.5) {
-        vecP.push_back(Z2i::Point(round(getRealValue(c.first)),round(getRealValue(c.second))));
-        belong=true;
-      }
-      it_bis++;
-    }
-  }
-  return vecP;
-}
-
-Z2i::Point Complex::digitization(int id_face, const Complex& grid)
-{
-  Z2i::Point p(-1,-1);
-  RationalPoint faceCenter = this->getFaceCenter(id_face);
-  for(int it=0; it<grid.face.size(); it++) {
-    std::vector<RationalPoint> face = grid.getFaceVertices(it);
-    RationalPoint c = getFaceCenter(face);
-    if(isInsidePolygon(face, faceCenter))
-      p=Z2i::Point(static_cast<int>(getRealValue(c.first)),static_cast<int>(getRealValue(c.second)));
-  }
-  return p;
-}
-
-std::vector<std::vector<RationalPoint> > Complex::digitizationFace(const Complex& grid)
-{
-  std::vector<RationalPoint> faceCenter = this->getFaceCenter();
-  std::vector<std::vector<RationalPoint> > vecFace;
-  /*
-   for(int it=0; it<grid.face.size(); it++) { //grid points in prior
-   std::vector<RationalPoint> face = grid.getFaceVertices(it);
-   for(int it_bis=0; it_bis<faceCenter.size(); it_bis++) {
-   RationalPoint c = faceCenter.at(it_bis);
-   if(isInsidePolygon(face, c))
-   vecFace.push_back(face);
-   }
-   }
-   */
-  for(int it_bis=0; it_bis<faceCenter.size(); it_bis++) { //cell points in prior
-    RationalPoint c = faceCenter.at(it_bis);
-    for(int it=0; it<grid.face.size(); it++) {
-      std::vector<RationalPoint> face = grid.getFaceVertices(it);
-      if(isInsidePolygon(face, c))
-        vecFace.push_back(face);
-    }
-  }
-  return vecFace;
-}
-
-std::vector<std::vector<RationalPoint> > digitizationFace(const std::vector<RationalPoint>& faceCenter, const Complex& grid)
-{
-  std::vector<std::vector<RationalPoint> > vecFace;
-  for(int it=0; it<grid.face.size(); it++) {
-    std::vector<RationalPoint> face = grid.getFaceVertices(it);
-    for(int it_bis=0; it_bis<faceCenter.size(); it_bis++) {
-      RationalPoint c = faceCenter.at(it_bis);
-      if(isInsidePolygon(face, c))
-        vecFace.push_back(face);
-    }
-  }
-  return vecFace;
-}
-
-std::vector<std::vector<RationalPoint> > digitizationFace(const std::vector<std::vector<RationalPoint> > & faces, const Complex& grid)
-{
-  std::vector<RationalPoint> faceCenter = getFaceCenter(faces);
-  std::vector<std::vector<RationalPoint> > vecFace;
-  for(int it=0; it<grid.face.size(); it++) {
-    std::vector<RationalPoint> face = grid.getFaceVertices(it);
-    for(int it_bis=0; it_bis<faceCenter.size(); it_bis++) {
-      RationalPoint c = faceCenter.at(it_bis);
-      if(isInsidePolygon(face, c))
-        vecFace.push_back(face);
-    }
-  }
-  return vecFace;
-}
-
-std::vector<Z2i::Point> Complex::digitization(const Complex& grid)
-{
-  std::vector<Z2i::Point> points;
-  std::vector<std::vector<RationalPoint> > faces = digitizationFace(grid);
-  for(int it=0; it<faces.size(); it++) {
-    if(faces.at(it).size()!=0) {
-      RationalPoint c = getFaceCenter(faces.at(it));
-      Z2i::Point p(static_cast<int>(getRealValue(c.first)),static_cast<int>(getRealValue(c.second)));
-      if(!containElement(points, p))
-        points.push_back(p);
-    }
-  }
-  return points;
-}
-
-std::vector<Z2i::Point> digitization(const std::vector<RationalPoint>& faceCenter, const Complex& grid)
-{
-  std::vector<Z2i::Point> points;
-  std::vector<std::vector<RationalPoint> > faces = digitizationFace(faceCenter, grid);
-  for(int it=0; it<faces.size(); it++) {
-    if(faces.at(it).size()!=0) {
-      RationalPoint c = getFaceCenter(faces.at(it));
-      Z2i::Point p(static_cast<int>(getRealValue(c.first)),static_cast<int>(getRealValue(c.second)));
-      if(!containElement(points, p))
-        points.push_back(p);
-    }
-  }
-  return points;
-}
-
-std::vector<Z2i::Point> digitization(const std::vector<std::vector<RationalPoint> > & faces, const Complex& grid)
-{
-  std::vector<RationalPoint> faceCenter = getFaceCenter(faces);
-  std::vector<Z2i::Point> points = digitization(faceCenter, grid);
-  return points;
 }
 
 Board2D drawVertex(const RationalPoint vertex, Board2D& board, double size, Color c)
@@ -1560,96 +1349,100 @@ Board2D drawPoint(const Z2i::Point vertex, Board2D& board, double size, Color c)
 
 Board2D Complex::drawVertex(Board2D& board, int index, Color c) const
 {
-  RationalPoint rp = list_vertex.at(index);
-  Rational rx = rp.first;
-  Rational ry = rp.second;
-  double x = getRealValue(rx);
-  double y = getRealValue(ry);
-  
-  board.setPenColor(c);
-  board.fillCircle(x, y, 4*SIZE/this->getBorderSize());
+  if(index>=0 && index<list_vertex.size()) {
+    RationalPoint rp = list_vertex.at(index);
+    Rational rx = rp.first;
+    Rational ry = rp.second;
+    double x = getRealValue(rx);
+    double y = getRealValue(ry);
+    
+    board.setPenColor(c);
+    board.fillCircle(x, y, 4*SIZE/this->getBorderSize());
+  }
   return board;
 }
 
 Board2D Complex::drawEdge(Board2D& board, int index, Color c) const
 {
-  std::pair<int,int> e = edge.at(index);
-  int e1 = e.first;
-  int e2 = e.second;
-  
-  RationalPoint rp1 = list_vertex.at(e1);
-  RationalPoint rp2 = list_vertex.at(e2);
-  
-  Rational rp1x = rp1.first;
-  Rational rp1y = rp1.second;
-  double x1 = getRealValue(rp1x);
-  double y1 = getRealValue(rp1y);
-  
-  Rational rp2x = rp2.first;
-  Rational rp2y = rp2.second;
-  double x2 = getRealValue(rp2x);
-  double y2 = getRealValue(rp2y);
-  
-  board.setPenColor(c);
-  board.setLineWidth( 100*SIZE/this->getBorderSize() );
-  board.setLineStyle(LibBoard::Arc::SolidStyle);
-  
-  double dx = x2-x1;
-  double dy = y2-y1;
-  double xx1 = x1 + 10*SIZE*dx/this->getBorderSize();
-  double yy1 = y1 + 10*SIZE*dy/this->getBorderSize();
-  double xx2 = x1 + (1 - 10*SIZE/this->getBorderSize()) * dx;
-  double yy2 = y1 + (1 - 10*SIZE/this->getBorderSize()) * dy;
-  board.drawLine(xx1, yy1, xx2, yy2);
-  
+  if(index>=0 && index<edge.size()) {
+    std::pair<int,int> e = edge.at(index);
+    int e1 = e.first;
+    int e2 = e.second;
+    
+    RationalPoint rp1 = list_vertex.at(e1);
+    RationalPoint rp2 = list_vertex.at(e2);
+    
+    Rational rp1x = rp1.first;
+    Rational rp1y = rp1.second;
+    double x1 = getRealValue(rp1x);
+    double y1 = getRealValue(rp1y);
+    
+    Rational rp2x = rp2.first;
+    Rational rp2y = rp2.second;
+    double x2 = getRealValue(rp2x);
+    double y2 = getRealValue(rp2y);
+    
+    board.setPenColor(c);
+    board.setLineWidth( 100*SIZE/this->getBorderSize() );
+    board.setLineStyle(LibBoard::Arc::SolidStyle);
+    
+    double dx = x2-x1;
+    double dy = y2-y1;
+    double xx1 = x1 + 10*SIZE*dx/this->getBorderSize();
+    double yy1 = y1 + 10*SIZE*dy/this->getBorderSize();
+    double xx2 = x1 + (1 - 10*SIZE/this->getBorderSize()) * dx;
+    double yy2 = y1 + (1 - 10*SIZE/this->getBorderSize()) * dy;
+    board.drawLine(xx1, yy1, xx2, yy2);
+  }
   return board;
 }
 
 Board2D Complex::drawFace(Board2D& board, int index, Color c) const
 {
-  std::vector<int> aFace = face.at(index);
-  std::vector<LibBoard::Point> points;
-  for(int it=0; it<aFace.size(); it++) {
-    RationalPoint rp = list_vertex.at(aFace.at(it));
-    Rational rx = rp.first;
-    Rational ry = rp.second;
-    double x = getRealValue(rx);
-    double y = getRealValue(ry);
-    points.push_back(LibBoard::Point(x,y));
+  if(index>=0 && index<face.size()) {
+    std::vector<int> aFace = face.at(index);
+    std::vector<LibBoard::Point> points;
+    for(int it=0; it<aFace.size(); it++) {
+      RationalPoint rp = list_vertex.at(aFace.at(it));
+      Rational rx = rp.first;
+      Rational ry = rp.second;
+      double x = getRealValue(rx);
+      double y = getRealValue(ry);
+      points.push_back(LibBoard::Point(x,y));
+    }
+    
+    //Set transparence for face
+    c.alpha(100);
+    board.setPenColor(c);
+    
+    LibBoard::Polyline polyline(points,true,c,c,SIZE);
+    polyline.scale(1- 20*SIZE/this->getBorderSize()); //10*SIZE/this->getBorderSize()
+    std::vector<LibBoard::Point> points_scale;
+    for (int it=0; it<points.size(); it++)
+    points_scale.push_back(polyline[it]);
+    board.fillPolyline(points_scale);
   }
-  
-  //Set transparence for face
-  c.alpha(100);
-  board.setPenColor(c);
-  
-  LibBoard::Polyline polyline(points,true,c,c,SIZE);
-  polyline.scale(1- 20*SIZE/this->getBorderSize()); //10*SIZE/this->getBorderSize()
-  std::vector<LibBoard::Point> points_scale;
-  for (int it=0; it<points.size(); it++)
-  points_scale.push_back(polyline[it]);
-  board.fillPolyline(points_scale);
-  
   return board;
 }
 
 Board2D Complex::drawVertex(Board2D& board, Color c) const
 {
   for(int it=0; it<vertex.size(); it++)
-  this->drawVertex(board, it, c);
+    this->drawVertex(board, vertex.at(it), c);
   return board;
 }
 
 Board2D Complex::drawEdge(Board2D& board, Color c) const
 {
   for(int it=0; it<edge.size(); it++)
-  this->drawEdge(board, it, c);
+    this->drawEdge(board, it, c);
   return board;
 }
 
 Board2D Complex::drawFace(Board2D& board, Color c) const
 {
   for(int it=0; it<face.size(); it++)
-  this->drawFace(board, it, c);
+    this->drawFace(board, it, c);
   return board;
 }
 
@@ -1734,8 +1527,8 @@ Board2D Complex::drawComplex(Board2D& board, Color c, bool drawBorder, bool draw
   if(drawBorder)
     this->drawBorder(board,c);
   this->drawFace(board, c);
-  this->drawVertex(board, c);
   this->drawEdge(board, c);
+  this->drawVertex(board, c);
   return board;
 }
 
@@ -1753,15 +1546,7 @@ Board2D Complex::drawPixel(Board2D& board, Color c, bool drawBorder, bool drawDo
   for(int it=0; it<this->face.size(); it++) {
     std::vector<RationalPoint> aFace = this->getFaceVertices(it);
     assert(aFace.size()-1==4);
-    /*
-     std::pair<RationalPoint, RationalPoint> bb=getBoundingBox(aFace);
-     double x = getRealValue(bb.first.first);
-     double y = getRealValue(bb.second.second);
-     double w = getRealValue(bb.second.first) - getRealValue(bb.first.first);
-     double h = getRealValue(bb.second.second) - getRealValue(bb.first.second);
-     assert(w>0 && h>0);
-     board.fillRectangle(x, y, w, h);
-     */
+    
     std::vector<LibBoard::Point> points;
     for(int it_bis=0; it_bis<aFace.size(); it_bis++) {
       RationalPoint rp = aFace.at(it_bis);
@@ -1772,43 +1557,6 @@ Board2D Complex::drawPixel(Board2D& board, Color c, bool drawBorder, bool drawDo
       points.push_back(LibBoard::Point(x,y));
     }
     board.fillPolyline(points);
-  }
-  return board;
-}
-
-Board2D Complex::drawConectedComponent(Board2D& board, Color c, bool drawBorder, bool drawDomain) const
-{
-  Z2i::Point p1 = domain.first;
-  Z2i::Point p2 = domain.second;
-  Z2i::Domain d( p1, p2 );
-  if(drawDomain)
-    //board << d; //Draw domain by DGtal
-    this->drawGrid(board,c);
-  if(drawBorder)
-    this->drawBorder(board,c);
-  
-  // Creating colormap
-  int maxColor = 0;
-  for(size_t it=0; it<idConnectedComponent.size(); it++)
-    if(idConnectedComponent.at(it)>maxColor)
-      maxColor = idConnectedComponent.at(it);
-  HueShadeColorMap<double> hueMap(0.9, maxColor+1.0);
-  if(idConnectedComponent.size()!=0) {
-    for(int it=0; it<this->face.size(); it++) {
-      board.setPenColor(hueMap(double(idConnectedComponent.at(it))));
-      std::vector<RationalPoint> aFace = this->getFaceVertices(it);
-      //assert(aFace.size()-1==4);
-      std::vector<LibBoard::Point> points;
-      for(int it_bis=0; it_bis<aFace.size(); it_bis++) {
-        RationalPoint rp = aFace.at(it_bis);
-        Rational rx = rp.first;
-        Rational ry = rp.second;
-        double x = getRealValue(rx);
-        double y = getRealValue(ry);
-        points.push_back(LibBoard::Point(x,y));
-      }
-      board.fillPolyline(points);
-    }
   }
   return board;
 }

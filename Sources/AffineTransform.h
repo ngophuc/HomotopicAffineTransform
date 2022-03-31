@@ -39,6 +39,6 @@ class AffineTransform
 RationalPoint transformPoint(RationalPoint p, AffineTransform t);
 std::pair<RationalPoint,RationalPoint> transformSegment(RationalPoint p1, RationalPoint p2, AffineTransform t);
 std::pair<RationalPoint,RationalPoint> transformSegment(std::pair<RationalPoint,RationalPoint> p, AffineTransform t);
-Complex transform(Complex c, AffineTransform t);
+Complex transform(const Complex& c, AffineTransform t);
 
 #endif // AFFINETRANSFORM_H
