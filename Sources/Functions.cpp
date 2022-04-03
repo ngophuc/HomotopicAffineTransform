@@ -1,9 +1,21 @@
 #include "Functions.h"
 
-RationalPoint getIntegerPoint(RationalPoint p)
+RationalPoint getIntegerRationalPoint(RationalPoint p)
 {
   Z2i::Point pp = Z2i::Point(int(getRealValue(p.first)), int(getRealValue(p.second))); //pixel center
   RationalPoint pr = RationalPoint(Rational(pp[0]),Rational(pp[1]));
+  return pr;
+}
+
+Z2i::Point getIntegerPoint(RationalPoint p)
+{
+  Z2i::Point pp = Z2i::Point(int(getRealValue(p.first)), int(getRealValue(p.second))); //pixel center
+  return pp;
+}
+
+RationalPoint getRationalPoint(Z2i::Point p)
+{
+  RationalPoint pr = RationalPoint(Rational(p[0]),Rational(p[1]));
   return pr;
 }
 

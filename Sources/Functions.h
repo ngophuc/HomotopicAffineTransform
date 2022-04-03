@@ -46,7 +46,9 @@ typedef std::tuple<int,int,int> PythagoreanTriple;
 
 std::ostream& operator<<(std::ostream& os, const RationalPoint p);
 
-RationalPoint getIntegerPoint(RationalPoint p);
+RationalPoint getIntegerRationalPoint(RationalPoint p);
+Z2i::Point getIntegerPoint(RationalPoint p);
+RationalPoint getRationalPoint(Z2i::Point p);
 
 Line getLineFromPoints(RationalPoint p1, RationalPoint p2);
 double getRealValue(Rational rp);
