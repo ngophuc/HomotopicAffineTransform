@@ -117,8 +117,8 @@ tau (const Complex& gridH, const std::vector<bool>& cH) {
         cH_tmp.at(it) = true;
         simple = isSimpleFace(gridH,cH_tmp,it); //verify new face simplicity
       }
-      else //simple by default
-        simple = true;
+      else //not simple by default
+        simple = false;
     }
     isSimple.at(it) = simple;
   }
